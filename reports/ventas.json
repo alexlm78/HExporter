@@ -1,0 +1,7 @@
+{
+  "name": "ventas_mensuales",
+  "sql": "SELECT id, fecha, monto, cliente FROM ventas WHERE fecha BETWEEN :desde AND :hasta",
+  "binds": { "desde": "2026-01-01", "hasta": "2026-01-31" },
+  "format": "xlsx",
+  "xlsx": { "sheetName": "Ventas" }
+}

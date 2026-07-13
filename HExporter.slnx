@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HExporter.Application/HExporter.Application.csproj" />
+    <Project Path="src/HExporter.Cli/HExporter.Cli.csproj" />
+    <Project Path="src/HExporter.Core/HExporter.Core.csproj" />
+    <Project Path="src/HExporter.Export/HExporter.Export.csproj" />
+    <Project Path="src/HExporter.Infrastructure/HExporter.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HExporter.IntegrationTests/HExporter.IntegrationTests.csproj" />
+    <Project Path="tests/HExporter.UnitTests/HExporter.UnitTests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/HExporter.MemProbe/HExporter.MemProbe.csproj" />
+  </Folder>
+</Solution>

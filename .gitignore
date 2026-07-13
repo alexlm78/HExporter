@@ -491,3 +491,6 @@ $RECYCLE.BIN/
 # Windows shortcuts
 *.lnk
 
+# tokensave MCP tool (local code-graph cache/db)
+.tokensave/
+
