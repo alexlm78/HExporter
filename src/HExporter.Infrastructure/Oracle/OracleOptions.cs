@@ -14,4 +14,10 @@ public sealed class OracleOptions
     public int CommandTimeoutSeconds { get; set; } = 0;
 
     public bool BindByName { get; set; } = true;
+
+    /// <summary>Reintentos ante fallo transitorio de apertura de conexión (Polly). 0 = sin reintentos.</summary>
+    public int ConnectRetryAttempts { get; set; } = 3;
+
+    /// <summary>Base del backoff exponencial entre reintentos de conexión.</summary>
+    public double ConnectRetryBaseDelaySeconds { get; set; } = 2.0;
 }

@@ -24,6 +24,7 @@
     <ProjectReference Include="..\..\src\HExporter.Core\HExporter.Core.csproj" />
     <ProjectReference Include="..\..\src\HExporter.Application\HExporter.Application.csproj" />
     <ProjectReference Include="..\..\src\HExporter.Export\HExporter.Export.csproj" />
+    <ProjectReference Include="..\..\src\HExporter.Infrastructure\HExporter.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

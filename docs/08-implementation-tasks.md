@@ -68,7 +68,7 @@ Prioridad de entrega: **E1 → E2 → E3 → E4** forman el MVP (CSV funcional e
 - [x] **T8.1** Serilog: consola + archivo rolling; `ExportId` de correlación. (M)
 - [x] **T8.2** Logging de métricas de exportación (filas, bytes, throughput); NUNCA datos de filas. (S)
 - [x] **T8.3** Resolución de secretos: env reales > archivo `[dot]env` (`DotNetEnv`, opcional, `--env-file` configurable) > `appsettings.json`. Plantilla `env.example` sin secretos; `.env` en `.gitignore`. Pendiente Wallet/Key Vault para prod. (M)
-- [ ] **T8.4** Reintentos de apertura de conexión (Polly). (M)
+- [x] **T8.4** Reintentos de apertura de conexión (Polly). → `OracleConnectionFactory` con `ResiliencePipeline` (backoff exponencial), `Oracle:ConnectRetryAttempts`/`ConnectRetryBaseDelaySeconds` configurables, `0` deshabilita. 2 unit tests (`OracleConnectionFactoryRetryTests.cs`). (M)
 - [x] **T8.5** Validación anti-injection de `--table` / path traversal de `--out`. → `ExportRequestValidator.IsValidTableName` (regex identificador) + `ExportSecurity:AllowedOutputDirectory` opcional (defensa en profundidad, `Path.GetFullPath` + containment check); 5 unit tests en `ExportRequestValidatorTests.cs`. (M)
 
 ## E9 — Pruebas de volumen y rendimiento  (M)  *(gate de aceptación)*

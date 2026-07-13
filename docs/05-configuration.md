@@ -8,7 +8,9 @@
     "ConnectionStringName": "Reporting",
     "FetchSizeBytes": 1048576,
     "CommandTimeoutSeconds": 0,
-    "BindByName": true
+    "BindByName": true,
+    "ConnectRetryAttempts": 3,
+    "ConnectRetryBaseDelaySeconds": 2.0
   },
   "Export": {
     "DefaultEncoding": "utf-8",
@@ -37,6 +39,8 @@
   }
 }
 ```
+
+`Oracle.ConnectRetryAttempts` (Polly): reintentos con backoff exponencial ante fallo transitorio al **abrir** la conexión (listener caído, red). `0` = deshabilitado. No reintenta cancelación (Ctrl+C) ni errores de configuración (connection string vacío).
 
 ## 2. Secretos / credenciales
 
