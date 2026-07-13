@@ -75,8 +75,8 @@ Prioridad de entrega: **E1 → E2 → E3 → E4** forman el MVP (CSV funcional e
 
 - [x] **T9.1** Generador de dataset sintético 10M+ filas. → `tools/HExporter.MemProbe` (`SyntheticRecordReader`) + `scripts/seed_10m.sql` (Oracle real). (S)
 - [x] **T9.2** Prueba de memoria plana — **criterio de aceptación del proyecto**. → MemProbe muestrea working-set/GC. **Verificado: 10M CSV, peak WS ~126 MB, memoria plana. PASS.** (M)
-- [ ] **T9.3** Benchmarks (BenchmarkDotNet) variando FetchSize/FlushEvery. (M)
-- [ ] **T9.4** Documentar valores de tuning recomendados. (S)
+- [x] **T9.3** Benchmarks (BenchmarkDotNet) variando FetchSize/FlushEvery. → `tools/HExporter.Benchmarks` (`ExportThroughputBenchmarks`, reader sintético + writers reales, sin Oracle); varía `FlushEveryRows`/`FileBufferBytes`. `FetchSizeBytes` requiere Oracle real (mismo bloqueo Docker que T3.6) — queda como guía sin benchmark propio. (M)
+- [x] **T9.4** Documentar valores de tuning recomendados. → `docs/09-tuning.md`. (S)
 
 ## E10 — Empaquetado y entrega  (S)
 
