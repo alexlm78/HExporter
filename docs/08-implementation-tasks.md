@@ -29,7 +29,7 @@ Prioridad de entrega: **E1 → E2 → E3 → E4** forman el MVP (CSV funcional e
 - [x] **T3.3** `OracleRecordReader.OpenAsync`: comando, `FetchSize`, `SequentialAccess`, bind vars. (L)
 - [x] **T3.4** Mapeo `GetColumnSchema()` → `ColumnSchema` (tipos Oracle→CLR). (M)
 - [x] **T3.5** Streaming de LOB (`InitialLOBFetchSize=-1`). (M)
-- [ ] **T3.6** Pruebas de integración con Testcontainers.Oracle. (L)
+- [x] **T3.6** Pruebas de integración con Testcontainers.Oracle. → `tests/HExporter.IntegrationTests` (`OracleFixture` + `OracleRecordReaderTests`), contenedor `gvenzl/oracle-free:slim-faststart` vía podman (`DOCKER_HOST`/`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE` ya apuntan a la VM de podman). Cubre: schema/valores end-to-end, bind variables, y `FetchSizeBytes` chico forzando varios round-trips sin perder/duplicar filas. Dos hallazgos no obvios documentados como comentarios en `OracleFixture.cs`: (1) la wait strategy por defecto de la librería (buscar mensaje en logs) choca con podman — Docker.DotNet lanza "Invalid chunk header" leyendo logs por su socket; se reemplaza por espera de puerto + retry de conexión real; (2) no usar `.WithDatabase(...)`: gvenzl/oracle-free ya crea el PDB "FREEPDB1" por defecto, pedir crear uno con el mismo nombre dispara `ORA-65012` y aborta el arranque — el connection string se arma a mano contra ese PDB en vez de `GetConnectionString()` (que asume el servicio "XE" de oracle-xe). Además, la VM de podman necesitó subir de 2GiB a 6GiB de RAM (`podman machine set --memory 6144`) — Oracle Free no arranca de forma confiable con menos. (L)
 
 ## E4 — Writer CSV (Export)  (L)
 
@@ -75,13 +75,13 @@ Prioridad de entrega: **E1 → E2 → E3 → E4** forman el MVP (CSV funcional e
 
 - [x] **T9.1** Generador de dataset sintético 10M+ filas. → `tools/HExporter.MemProbe` (`SyntheticRecordReader`) + `scripts/seed_10m.sql` (Oracle real). (S)
 - [x] **T9.2** Prueba de memoria plana — **criterio de aceptación del proyecto**. → MemProbe muestrea working-set/GC. **Verificado: 10M CSV, peak WS ~126 MB, memoria plana. PASS.** (M)
-- [x] **T9.3** Benchmarks (BenchmarkDotNet) variando FetchSize/FlushEvery. → `tools/HExporter.Benchmarks` (`ExportThroughputBenchmarks`, reader sintético + writers reales, sin Oracle); varía `FlushEveryRows`/`FileBufferBytes`. `FetchSizeBytes` requiere Oracle real (mismo bloqueo Docker que T3.6) — queda como guía sin benchmark propio. (M)
+- [x] **T9.3** Benchmarks (BenchmarkDotNet) variando FetchSize/FlushEvery. → `tools/HExporter.Benchmarks` (`ExportThroughputBenchmarks`, reader sintético + writers reales, sin Oracle); varía `FlushEveryRows`/`FileBufferBytes`. `FetchSizeBytes` requiere Oracle real — queda como guía sin benchmark propio (no por bloqueo de entorno: T3.6 confirmó que podman sí corre Oracle real aquí). (M)
 - [x] **T9.4** Documentar valores de tuning recomendados. → `docs/09-tuning.md`. (S)
 
 ## E10 — Empaquetado y entrega  (S)
 
 - [x] **T10.1** Publicación framework-dependent + self-contained single-file. → comandos `dotnet publish` documentados en README; `HExporter.Cli.csproj` con `SelfContained`/`IncludeNativeLibrariesForSelfExtract` condicionados a `PublishSingleFile=true`. Sin trimming (`Oracle.ManagedDataAccess.Core` no es trim-safe). (M)
-- [x] **T10.2** Dockerfile (runtime net10.0 — corregido de "8.0" a la versión real del proyecto). → multi-stage sdk→runtime, framework-dependent, `.dockerignore`. **No verificado con `docker build`**: solo `podman` presente y sin daemon configurado en este entorno (mismo bloqueo que T3.6). Revisar build real cuando haya Docker/Podman funcional disponible. (S)
+- [x] **T10.2** Dockerfile (runtime net10.0 — corregido de "8.0" a la versión real del proyecto). → multi-stage sdk→runtime, framework-dependent, `.dockerignore`. Verificado con `podman build -t hexporter:test .` (build exitoso) y `podman run --rm hexporter:test --help` (entrypoint responde correctamente). (S)
 - [x] **T10.3** README de uso + ejemplos. → sección "Empaquetado y distribución" (publish/Docker). (S)
 
 ---
