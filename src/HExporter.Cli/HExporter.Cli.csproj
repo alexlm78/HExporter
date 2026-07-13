@@ -30,4 +30,12 @@
     <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <!-- Solo aplica con `dotnet publish -p:PublishSingleFile=true -r <RID>` (T10.1).
+       Sin PublishTrimmed: Oracle.ManagedDataAccess.Core usa reflection y no es trim-safe. -->
+  <PropertyGroup Condition="'$(PublishSingleFile)' == 'true'">
+    <SelfContained>true</SelfContained>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
 </Project>

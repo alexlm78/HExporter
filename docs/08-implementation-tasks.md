@@ -80,9 +80,9 @@ Prioridad de entrega: **E1 → E2 → E3 → E4** forman el MVP (CSV funcional e
 
 ## E10 — Empaquetado y entrega  (S)
 
-- [ ] **T10.1** Publicación framework-dependent + self-contained single-file. (M)
-- [ ] **T10.2** Dockerfile (runtime 8.0). (S)
-- [ ] **T10.3** README de uso + ejemplos. (S)
+- [x] **T10.1** Publicación framework-dependent + self-contained single-file. → comandos `dotnet publish` documentados en README; `HExporter.Cli.csproj` con `SelfContained`/`IncludeNativeLibrariesForSelfExtract` condicionados a `PublishSingleFile=true`. Sin trimming (`Oracle.ManagedDataAccess.Core` no es trim-safe). (M)
+- [x] **T10.2** Dockerfile (runtime net10.0 — corregido de "8.0" a la versión real del proyecto). → multi-stage sdk→runtime, framework-dependent, `.dockerignore`. **No verificado con `docker build`**: solo `podman` presente y sin daemon configurado en este entorno (mismo bloqueo que T3.6). Revisar build real cuando haya Docker/Podman funcional disponible. (S)
+- [x] **T10.3** README de uso + ejemplos. → sección "Empaquetado y distribución" (publish/Docker). (S)
 
 ---
 

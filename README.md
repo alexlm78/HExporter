@@ -133,6 +133,37 @@ docs/                       diseño de arquitectura (00–08 + ADRs)
 scripts/                    seed SQL para pruebas
 ```
 
+## Empaquetado y distribución
+
+**Framework-dependent** (requiere .NET 10 runtime instalado en destino):
+
+```bash
+dotnet publish src/HExporter.Cli -c Release -o ./publish
+```
+
+**Self-contained single-file** (no requiere .NET instalado; incluye el runtime):
+
+```bash
+dotnet publish src/HExporter.Cli -c Release -r linux-x64 -p:PublishSingleFile=true -o ./publish
+# RIDs alternativos: win-x64, osx-arm64, osx-x64, linux-arm64
+```
+
+Sin `PublishTrimmed`: `Oracle.ManagedDataAccess.Core` usa reflection extensivamente y
+no es trim-safe (recortarlo puede romper la carga del driver en runtime).
+
+**Docker** (imagen framework-dependent, runtime `mcr.microsoft.com/dotnet/runtime:10.0`):
+
+```bash
+docker build -t hexporter .
+docker run --rm \
+  -e HEXPORTER_Oracle__ConnectionString="user/pass@host:1521/service" \
+  -v "$(pwd)/out:/out" \
+  hexporter export --table VENTAS.PEDIDOS --format csv --out /out/pedidos.csv
+```
+
+Credenciales solo por variable de entorno (nunca hardcodeadas ni en la imagen, ver
+`docs/06-nfr-ops.md`). El volumen `/out` recibe el archivo exportado.
+
 ## Límites conocidos
 
 - XLSX: máx **1.048.576 filas por hoja** (límite del formato). Para volúmenes mayores usar CSV, o `RowLimitStrategy=NewSheet`.
