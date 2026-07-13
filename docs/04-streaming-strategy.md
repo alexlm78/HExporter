@@ -64,6 +64,8 @@ XLSX permite máx. **1.048.576 filas/hoja**. Estrategias (config `XlsxOptions.Ro
 
 Para volúmenes que superen holgadamente el límite, **CSV es la elección natural** (sin límite de filas).
 
+`NewSheet` implementado en `XlsxExportWriter` sin romper streaming: MiniExcel decide multi-hoja si el `value` pasado a `SaveAs` implementa `IDictionary<string, object>`, y `GetSheets()` internamente solo llama `GetEnumerator()` (nunca `.Count`/`.Keys`/indexer). Se aprovecha con un `IDictionary<string, object>` "de mentira" cuyo único miembro real es el enumerador, alimentado por un `BlockingCollection<KeyValuePair<string, object>>` (una hoja a la vez, capacidad 1) — cada hoja es a su vez otro `BlockingCollection` de filas. Al llegar a `MaxRowsPerSheet` se cierra la cola de filas de la hoja actual y se agrega la siguiente hoja a la cola exterior. Memoria sigue acotada por las capacidades de las colas, no por el nº de hojas/filas.
+
 ## 7. Presión de memoria y verificación
 
 - Configurar `<ServerGarbageCollection>true</ServerGarbageCollection>` para batch de alto throughput; evaluar `<ConcurrentGarbageCollection>`.

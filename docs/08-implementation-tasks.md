@@ -44,7 +44,7 @@ Prioridad de entrega: **E1 → E2 → E3 → E4** forman el MVP (CSV funcional e
 - [x] **T5.1** Integrar `MiniExcel`; `XlsxOptions` (sheet, headers, RowLimitStrategy). (M)
 - [x] **T5.2** Adaptar `IRecordReader` → fuente perezosa (IDataReader/IEnumerable). → puente push→pull vía `BlockingCollection` acotada. (L)
 - [x] **T5.3** `XlsxExportWriter` streaming (Begin/WriteRow/End). (L)
-- [x] **T5.4** Enforcement del límite 1.048.576 filas + estrategia `Fail`/`NewSheet`. → `Fail` implementado y verificado (probe 10M XLSX aborta correctamente); `NewSheet` pendiente. (M)
+- [x] **T5.4** Enforcement del límite 1.048.576 filas + estrategia `Fail`/`NewSheet`. → `Fail` verificado (probe 10M XLSX aborta correctamente); `NewSheet` implementado en `XlsxExportWriter` explotando el modo multi-hoja lazy de MiniExcel (`IDictionary<string,object>` custom, streaming, ver docs/04-streaming-strategy.md §6). 2 tests nuevos en `XlsxExportWriterTests` (rollover multi-hoja + `Fail` sigue lanzando). (M)
 - [x] **T5.5** Unit tests de tipos/celdas/headers/límite. → `tests/HExporter.UnitTests/XlsxExportWriterTests.cs` (roundtrip real). (M)
 
 ## E6 — Orquestación (Application)  (M)
