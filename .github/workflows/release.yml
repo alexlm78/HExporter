@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Tag a publicar (ej. v1.0.0). Solo aplica a runs manuales.'
+        required: true
+        default: 'v0.0.0-dev'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Publish ${{ matrix.rid }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            os_name: linux
+            arch: x86_64
+            ext: tar.gz
+          - rid: linux-arm64
+            os_name: linux
+            arch: arm64
+            ext: tar.gz
+          - rid: win-x64
+            os_name: windows
+            arch: x86_64
+            ext: zip
+          - rid: win-arm64
+            os_name: windows
+            arch: arm64
+            ext: zip
+          - rid: osx-x64
+            os_name: macos
+            arch: x86_64
+            ext: tar.gz
+          - rid: osx-arm64
+            os_name: macos
+            arch: arm64
+            ext: tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Version from tag
+        id: version
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore
+        run: dotnet restore HExporter.slnx
+
+      - name: Publish (self-contained single-file, ${{ matrix.rid }})
+        run: |
+          dotnet publish src/HExporter.Cli \
+            -c Release \
+            -r ${{ matrix.rid }} \
+            -p:PublishSingleFile=true \
+            -p:Version=${{ steps.version.outputs.version }} \
+            --self-contained true \
+            -o publish/${{ matrix.rid }}
+
+      - name: Package (tar.gz)
+        if: matrix.ext == 'tar.gz'
+        working-directory: publish/${{ matrix.rid }}
+        run: tar -czf ../../hexporter-${{ steps.version.outputs.version }}-${{ matrix.os_name }}-${{ matrix.arch }}.tar.gz .
+
+      - name: Package (zip)
+        if: matrix.ext == 'zip'
+        working-directory: publish/${{ matrix.rid }}
+        run: zip -r ../../hexporter-${{ steps.version.outputs.version }}-${{ matrix.os_name }}-${{ matrix.arch }}.zip .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hexporter-${{ matrix.rid }}
+          path: hexporter-${{ steps.version.outputs.version }}-${{ matrix.os_name }}-${{ matrix.arch }}.${{ matrix.ext }}
+          retention-days: 7
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
