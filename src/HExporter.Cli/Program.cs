@@ -13,6 +13,7 @@ using DotNetEnv;
 
 // ---- Opciones CLI ----
 var sqlOpt = new Option<string?>("--sql") { Description = "Consulta SELECT a exportar." };
+var sqlFileOpt = new Option<string?>("--sql-file") { Description = "Ruta a un archivo .sql con la consulta a exportar." };
 var tableOpt = new Option<string?>("--table") { Description = "Tabla/vista a exportar (SELECT *)." };
 var profileOpt = new Option<string?>("--profile") { Description = "Ruta a un report.json." };
 var formatOpt = new Option<ExportFormat>("--format") { Description = "csv | xlsx.", DefaultValueFactory = _ => ExportFormat.Csv };
@@ -25,7 +26,7 @@ var flushOpt = new Option<int>("--flush-every") { Description = "Filas entre flu
 var envFileOpt = new Option<string?>("--env-file") { Description = "Ruta a un archivo .env alternativo (def. .env en el directorio actual)." };
 
 var root = new RootCommand("HExporter — exporta tablas/consultas Oracle a CSV/XLSX por streaming.");
-foreach (var o in new Option[] { sqlOpt, tableOpt, profileOpt, formatOpt, outOpt, bindOpt, delimiterOpt, noHeadersOpt, sheetOpt, flushOpt, envFileOpt })
+foreach (var o in new Option[] { sqlOpt, sqlFileOpt, tableOpt, profileOpt, formatOpt, outOpt, bindOpt, delimiterOpt, noHeadersOpt, sheetOpt, flushOpt, envFileOpt })
     root.Options.Add(o);
 
 root.SetAction(async (parse, ct) =>
@@ -37,6 +38,7 @@ root.SetAction(async (parse, ct) =>
         var exporter = host.Services.GetRequiredService<ExportService>();
 
         string? sql = parse.GetValue(sqlOpt);
+        string? sqlFile = parse.GetValue(sqlFileOpt);
         string? table = parse.GetValue(tableOpt);
         string? profilePath = parse.GetValue(profileOpt);
         var format = parse.GetValue(formatOpt);
@@ -60,10 +62,24 @@ root.SetAction(async (parse, ct) =>
             }
             sql = $"SELECT * FROM {table}";
         }
+        else if (sqlFile is not null)
+        {
+            if (sql is not null)
+            {
+                Console.Error.WriteLine("Use --sql o --sql-file, no ambos.");
+                return 1;
+            }
+            if (!File.Exists(sqlFile))
+            {
+                Console.Error.WriteLine($"Archivo --sql-file no encontrado: {sqlFile}");
+                return 1;
+            }
+            sql = await File.ReadAllTextAsync(sqlFile, ct);
+        }
 
         if (string.IsNullOrWhiteSpace(sql))
         {
-            Console.Error.WriteLine("Indique --sql, --table o --profile.");
+            Console.Error.WriteLine("Indique --sql, --sql-file, --table o --profile.");
             return 1;
         }
 
