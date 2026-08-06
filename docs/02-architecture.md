@@ -1,77 +1,77 @@
-# 02 — Arquitectura
+# 02 — Architecture
 
-## 1. Principios
+## 1. Principles
 
-1. **Streaming primero.** El dato fluye fila por fila desde Oracle al archivo. Nunca se materializa el conjunto completo.
-2. **Memoria acotada.** El uso de RAM depende del tamaño de fila y del buffer, no del número de filas.
-3. **Separación de responsabilidades.** Lectura (Oracle), formateo (CSV/XLSX) y orquestación son independientes y testeables.
-4. **Extensible por formato.** Agregar un formato nuevo = implementar una interfaz, sin tocar el resto.
-5. **Fail-safe.** Cancelación cooperativa, límites de recursos, y limpieza de archivos parciales.
+1. **Streaming first.** Data flows row by row from Oracle to the file. The full set is never materialized.
+2. **Bounded memory.** RAM usage depends on row width and buffer size, not on the number of rows.
+3. **Separation of concerns.** Reading (Oracle), formatting (CSV/XLSX), and orchestration are independent and testable.
+4. **Extensible by format.** Adding a new format = implement an interface, without touching the rest.
+5. **Fail-safe.** Cooperative cancellation, resource limits, and cleanup of partial files.
 
-## 2. Vista de capas (Clean Architecture ligera)
+## 2. Layer view (light clean architecture)
 
 ```
 +-------------------------------------------------------------+
-|  HExporter.Cli            (System.CommandLine, host, DI)     |  Presentación
+|  HExporter.Cli            (System.CommandLine, host, DI)     |  Presentation
 +-------------------------------------------------------------+
-|  HExporter.Application    (orquestación, ExportService,      |  Aplicación
-|                            perfiles, validación)             |
+|  HExporter.Application    (orchestration, ExportService,     |  Application
+|                            profiles, validation)             |
 +-------------------------------------------------------------+
-|  HExporter.Core           (abstracciones, modelos, puertos:  |  Dominio
+|  HExporter.Core           (abstractions, models, ports:      |  Domain
 |                            IRecordReader, IExportWriter)      |
 +-------------------------------------------------------------+
-|  HExporter.Infrastructure (OracleRecordReader,               |  Infraestructura
+|  HExporter.Infrastructure (OracleRecordReader,               |  Infrastructure
 |   + HExporter.Export       CsvExportWriter, XlsxExportWriter) |
 +-------------------------------------------------------------+
 ```
 
-Regla de dependencias: las capas externas dependen de las internas. `Core` no depende de nadie (define los puertos/interfaces). Oracle y los writers son **adaptadores** que implementan esos puertos.
+Dependency rule: outer layers depend on inner ones. `Core` depends on nothing (it defines the ports/interfaces). Oracle and the writers are **adapters** that implement those ports.
 
-## 3. Componentes
+## 3. Components
 
-| Componente | Responsabilidad |
+| Component | Responsibility |
 |------------|-----------------|
-| `IRecordReader` | Puerto de lectura forward-only. Expone metadatos de columnas + iteración por fila. |
-| `OracleRecordReader` | Adaptador Oracle: abre conexión, ejecuta comando con `CommandBehavior.SequentialAccess`, tunea `FetchSize`, envuelve `OracleDataReader`. |
-| `IExportWriter` | Puerto de escritura. Recibe el schema y consume filas de forma incremental. |
-| `CsvExportWriter` | Escribe CSV fila a fila con `StreamWriter` + buffer; maneja quoting/escaping. |
-| `XlsxExportWriter` | Escribe XLSX en streaming con `MiniExcel` (no arma el workbook en RAM). |
-| `ExportService` | Orquesta: obtiene reader, resuelve writer por formato, bombea filas, reporta progreso, maneja cancelación y errores. |
-| `ReportProfile` | Definición declarativa de un reporte (consulta, formato, opciones). |
-| `ExportWriterFactory` | Resuelve el `IExportWriter` según formato solicitado. |
+| `IRecordReader` | Forward-only read port. Exposes column metadata + row-by-row iteration. |
+| `OracleRecordReader` | Oracle adapter: opens the connection, executes the command with `CommandBehavior.SequentialAccess`, tunes `FetchSize`, wraps `OracleDataReader`. |
+| `IExportWriter` | Write port. Receives the schema and consumes rows incrementally. |
+| `CsvExportWriter` | Writes CSV row by row with `StreamWriter` + buffer; handles quoting/escaping. |
+| `XlsxExportWriter` | Writes XLSX in streaming mode with `MiniExcel` (does not build the workbook in RAM). |
+| `ExportService` | Orchestrates: gets the reader, resolves the writer by format, pumps rows, reports progress, handles cancellation and errors. |
+| `ReportProfile` | Declarative definition of a report (query, format, options). |
+| `ExportWriterFactory` | Resolves the `IExportWriter` based on the requested format. |
 
-## 4. Flujo de una exportación (secuencia)
+## 4. Export flow (sequence)
 
 ```
 CLI → ExportService.ExecuteAsync(request, ct)
-  ├─ Validar request / cargar ReportProfile
-  ├─ reader = OracleRecordReader.OpenAsync(sql, binds, ct)   // conexión + FetchSize
-  ├─ schema = reader.GetSchema()                             // nombres/tipos de columnas
+  ├─ Validate request / load ReportProfile
+  ├─ reader = OracleRecordReader.OpenAsync(sql, binds, ct)   // connection + FetchSize
+  ├─ schema = reader.GetSchema()                             // column names/types
   ├─ writer = factory.Create(format, destinationStream)
-  ├─ await writer.BeginAsync(schema, ct)                     // encabezados / hoja
+  ├─ await writer.BeginAsync(schema, ct)                     // headers / sheet
   ├─ while (await reader.ReadAsync(ct))                      // forward-only
-  │     writer.WriteRow(reader.CurrentRow)                   // sin acumular
+  │     writer.WriteRow(reader.CurrentRow)                   // no accumulation
   │     if (++n % FlushEvery == 0) writer.Flush(); progress.Report(n)
-  ├─ await writer.EndAsync(ct)                               // cerrar/flush final
+  ├─ await writer.EndAsync(ct)                               // close / final flush
   └─ return ExportResult(rows=n, bytes, elapsed)
 ```
 
-Puntos clave:
-- El `while` procesa **una fila viva a la vez**. No hay lista/colección que crezca.
-- `Flush` periódico empuja el buffer al `Stream` de salida y evita que crezca.
-- Todo respeta un `CancellationToken`.
+Key points:
+- The `while` loop processes **one live row at a time**. There is no growing list/collection.
+- Periodic `Flush` pushes the buffer to the output `Stream` and keeps it from growing.
+- Everything respects a `CancellationToken`.
 
-## 5. Modelo de despliegue
+## 5. Deployment model
 
-- **Ejecutable de consola** self-contained o framework-dependent (`dotnet HExporter.Cli.dll ...`).
-- Corre en el mismo host o en un worker. Sin estado entre ejecuciones.
-- Salida a: ruta de disco local, montaje de red, o `stdout` (para pipe).
+- **Console executable**, self-contained or framework-dependent (`dotnet HExporter.Cli.dll ...`).
+- Runs on the same host or in a worker. No state between runs.
+- Output to: local disk path, network mount, or `stdout` (for piping).
 
-## 6. Decisiones de arquitectura
+## 6. Architecture decisions
 
-Ver [adr/](./adr/):
-- ADR-0001: .NET 8 + estructura de solución
-- ADR-0002: Driver Oracle managed y streaming server-side
-- ADR-0003: MiniExcel para XLSX en streaming
-- ADR-0004: Escritura CSV manual vs CsvHelper
-- ADR-0005: Estrategia de particionado (diferida a v2)
+See [adr/](./adr/):
+- ADR-0001: .NET 8 + solution structure
+- ADR-0002: Managed Oracle driver and server-side streaming
+- ADR-0003: MiniExcel for streaming XLSX
+- ADR-0004: Manual CSV writing vs. CsvHelper
+- ADR-0005: Partitioning strategy (deferred to v2)

@@ -1,26 +1,26 @@
-# ADR-0002 — Driver Oracle managed y lectura server-side streaming
+# ADR-0002 — Managed Oracle driver and server-side streaming reading
 
-**Estado:** Aceptado · **Fecha:** 2026-07-13
+**Status:** Accepted · **Date:** 2026-07-13
 
-## Contexto
+## Context
 
-El requisito central es leer resultados enormes sin cargarlos en memoria. La elección del driver y del modo de lectura determina si esto es posible.
+The core requirement is to read huge results without loading them into memory. The choice of driver and read mode determines whether this is possible.
 
-## Decisión
+## Decision
 
-- Usar **`Oracle.ManagedDataAccess.Core`** (100% managed, sin cliente Oracle nativo → cross-platform, despliegue simple).
-- Leer con **`OracleDataReader` forward-only** vía `ExecuteReaderAsync(CommandBehavior.SequentialAccess)`.
-- Tunear **`FetchSize`** (bytes por lote de red, ~256KB–1MB), **no** cargar el resultado completo.
-- **Prohibido** `DataTable`/`DataSet`/`Load()`.
-- LOBs con `InitialLOBFetchSize=-1` para transmitir, no bufferizar.
+- Use **`Oracle.ManagedDataAccess.Core`** (100% managed, no native Oracle client → cross-platform, simple deployment).
+- Read with a **forward-only `OracleDataReader`** via `ExecuteReaderAsync(CommandBehavior.SequentialAccess)`.
+- Tune **`FetchSize`** (bytes per network batch, ~256KB–1MB), **do not** load the full result.
+- **Forbidden**: `DataTable`/`DataSet`/`Load()`.
+- LOBs with `InitialLOBFetchSize=-1` to stream rather than buffer.
 
-## Consecuencias
+## Consequences
 
-- ✅ Cursor server-side: el cliente mantiene solo el lote actual → memoria O(1) en filas.
-- ✅ Sin dependencia de Oracle Instant Client.
-- ➖ `FetchSize` requiere tuning por forma de fila; documentado en [04](../04-streaming-strategy.md) y validado en E9.
+- ✅ Server-side cursor: the client only holds the current batch → O(1) memory in rows.
+- ✅ No dependency on Oracle Instant Client.
+- ➖ `FetchSize` requires tuning based on row shape; documented in [04](../04-streaming-strategy.md) and validated in E9.
 
-## Alternativas descartadas
+## Rejected alternatives
 
-- ODP.NET no-managed: requiere cliente nativo, complica despliegue/containers.
-- Dapper `Query<T>` sin `buffered:false`: bufferiza todo por defecto. (Con `buffered:false` sería viable pero preferimos control directo del reader.)
+- Non-managed ODP.NET: requires a native client, complicates deployment/containers.
+- Dapper `Query<T>` without `buffered:false`: buffers everything by default. (With `buffered:false` it would be viable, but we prefer direct control of the reader.)

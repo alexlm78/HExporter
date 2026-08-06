@@ -1,48 +1,48 @@
-# 07 — Estrategia de Pruebas
+# 07 — Testing Strategy
 
-## 1. Niveles
+## 1. Levels
 
-| Nivel | Alcance | Herramientas |
+| Level | Scope | Tools |
 |-------|---------|--------------|
-| Unitarias | Writers CSV/XLSX, validación, quoting, formateo, factory | xUnit, FluentAssertions |
-| Integración | `OracleRecordReader` contra Oracle real | Testcontainers.Oracle (gvenzl/oracle-free) |
-| End-to-end | CLI completa: SQL → archivo, verificación de contenido | Proceso CLI + aserciones sobre archivo |
-| Rendimiento / memoria | Volumen alto, memoria plana | BenchmarkDotNet + medición de working set |
+| Unit | CSV/XLSX writers, validation, quoting, formatting, factory | xUnit, FluentAssertions |
+| Integration | `OracleRecordReader` against real Oracle | Testcontainers.Oracle (gvenzl/oracle-free) |
+| End-to-end | Full CLI: SQL → file, content verification | CLI process + assertions on file |
+| Performance / memory | High volume, flat memory | BenchmarkDotNet + working set measurement |
 
-## 2. Unitarias — casos clave
+## 2. Unit — key cases
 
 **CSV:**
-- Quoting RFC 4180: valor con delimitador, con comillas (`"` → `""`), con salto de línea.
-- NULL → celda vacía.
-- Fechas/números con `CultureInfo` fijo (no depende del locale del host).
-- Encoding con/sin BOM.
-- `--no-headers` no escribe encabezado.
+- RFC 4180 quoting: value with delimiter, with quotes (`"` → `""`), with line break.
+- NULL → empty cell.
+- Dates/numbers with fixed `CultureInfo` (independent of host locale).
+- Encoding with/without BOM.
+- `--no-headers` does not write a header row.
 
 **XLSX:**
-- Encabezados presentes/ausentes.
-- Tipos: número, fecha, texto, NULL correctos en celdas.
-- `RowLimitStrategy=Fail` aborta al exceder 1.048.576.
+- Headers present/absent.
+- Types: number, date, text, NULL correct in cells.
+- `RowLimitStrategy=Fail` aborts when exceeding 1,048,576.
 
-**Reader (con doble/fake):** schema correcto, `ReadAsync` avanza, `IsDBNull`.
+**Reader (with a double/fake):** correct schema, `ReadAsync` advances, `IsDBNull`.
 
-## 3. Integración (Oracle real)
+## 3. Integration (real Oracle)
 
-- Levantar contenedor Oracle Free, sembrar tabla con dataset conocido.
-- Verificar: schema mapeado, bind variables, tipos Oracle (NUMBER, DATE, TIMESTAMP, VARCHAR2, CLOB) → CLR.
-- Verificar streaming de CLOB con `SequentialAccess`.
+- Spin up an Oracle Free container, seed a table with a known dataset.
+- Verify: mapped schema, bind variables, Oracle types (NUMBER, DATE, TIMESTAMP, VARCHAR2, CLOB) → CLR.
+- Verify CLOB streaming with `SequentialAccess`.
 
-## 4. Prueba de memoria (obligatoria — valida el objetivo del proyecto)
+## 4. Memory test (mandatory — validates the project's goal)
 
-Objetivo: demostrar memoria **O(1)** respecto a filas.
+Goal: demonstrate **O(1)** memory relative to rows.
 
-Procedimiento:
-1. Generar dataset sintético de **10M+ filas** (vía `CONNECT BY LEVEL` o tabla sembrada).
-2. Ejecutar export a CSV y a XLSX.
-3. Muestrear working set / GC heap durante la corrida (dotnet-counters).
-4. **Criterio de aceptación:** memoria estable; sin crecimiento monotónico con el nº de filas; sin `OutOfMemoryException`.
+Procedure:
+1. Generate a synthetic dataset of **10M+ rows** (via `CONNECT BY LEVEL` or a seeded table).
+2. Run export to CSV and to XLSX.
+3. Sample working set / GC heap during the run (dotnet-counters).
+4. **Acceptance criterion:** stable memory; no monotonic growth with row count; no `OutOfMemoryException`.
 
 ```sql
--- Generador de dataset sintético para pruebas
+-- Synthetic dataset generator for testing
 SELECT LEVEL id,
        SYSDATE - LEVEL fecha,
        DBMS_RANDOM.VALUE(1,10000) monto,
@@ -50,14 +50,14 @@ SELECT LEVEL id,
 FROM dual CONNECT BY LEVEL <= 10000000;
 ```
 
-## 5. Rendimiento (BenchmarkDotNet)
+## 5. Performance (BenchmarkDotNet)
 
-- Medir filas/seg por formato variando `FetchSizeBytes` y `FlushEveryRows`.
-- Comparar accesores boxed vs. tipados (justifica optimización de [04](./04-streaming-strategy.md) §5).
-- Registrar baseline para detectar regresiones en CI.
+- Measure rows/sec per format while varying `FetchSizeBytes` and `FlushEveryRows`.
+- Compare boxed vs. typed accessors (justifies the optimization in [04](./04-streaming-strategy.md) §5).
+- Record a baseline to detect regressions in CI.
 
 ## 6. CI
 
-- `dotnet test` (unitarias) en cada PR.
-- Integración con Testcontainers en pipeline nocturno (más lento).
-- Prueba de memoria como job manual/nocturno con reporte de tendencia.
+- `dotnet test` (unit) on every PR.
+- Integration with Testcontainers in a nightly pipeline (slower).
+- Memory test as a manual/nightly job with trend reporting.

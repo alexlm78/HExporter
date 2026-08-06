@@ -1,71 +1,71 @@
 # 09 — Tuning
 
-Valores recomendados para `ExportOptions` y benchmarks que los respaldan (T9.3/T9.4).
+Recommended values for `ExportOptions` and the benchmarks backing them (T9.3/T9.4).
 
-## Cómo correr los benchmarks
+## How to run the benchmarks
 
 ```bash
 dotnet run -c Release --project tools/HExporter.Benchmarks -- --filter '*'
 ```
 
-`tools/HExporter.Benchmarks/ExportThroughputBenchmarks.cs` mide el pipeline completo
-(`ExportService.ExecuteAsync`) con `SyntheticRecordReader` (200.000 filas, sin Oracle)
-→ CSV/XLSX real → disco. Varía `FlushEveryRows` (1.000/10.000/100.000) y
+`tools/HExporter.Benchmarks/ExportThroughputBenchmarks.cs` measures the full pipeline
+(`ExportService.ExecuteAsync`) with `SyntheticRecordReader` (200,000 rows, no Oracle)
+→ real CSV/XLSX → disk. Varies `FlushEveryRows` (1,000/10,000/100,000) and
 `FileBufferBytes` (64 KB/1 MB).
 
-## Resultados (Apple M1 Pro, macOS, .NET 10, Release, 200.000 filas)
+## Results (Apple M1 Pro, macOS, .NET 10, Release, 200,000 rows)
 
-| Formato | FlushEveryRows | FileBufferBytes | Media  | Memoria asignada |
+| Format | FlushEveryRows | FileBufferBytes | Mean  | Allocated memory |
 |---------|----------------|------------------|--------|-------------------|
-| CSV     | 1.000          | 64 KB            | 156 ms | 59 MB             |
-| CSV     | 10.000         | 64 KB            | 107 ms | 59 MB             |
-| CSV     | 100.000        | 64 KB            | 106 ms | 59 MB             |
-| CSV     | 10.000         | 1 MB             | 114 ms | 65 MB             |
-| CSV     | 100.000        | 1 MB             | 103 ms | 65 MB             |
-| XLSX    | 1.000          | 64 KB            | 606 ms | 417 MB            |
-| XLSX    | 10.000         | 64 KB            | 584 ms | 416 MB            |
-| XLSX    | 100.000        | 1 MB             | 582 ms | 418 MB            |
+| CSV     | 1,000          | 64 KB            | 156 ms | 59 MB             |
+| CSV     | 10,000         | 64 KB            | 107 ms | 59 MB             |
+| CSV     | 100,000        | 64 KB            | 106 ms | 59 MB             |
+| CSV     | 10,000         | 1 MB             | 114 ms | 65 MB             |
+| CSV     | 100,000        | 1 MB             | 103 ms | 65 MB             |
+| XLSX    | 1,000          | 64 KB            | 606 ms | 417 MB            |
+| XLSX    | 10,000         | 64 KB            | 584 ms | 416 MB            |
+| XLSX    | 100,000        | 1 MB             | 582 ms | 418 MB            |
 
-(Tabla completa de 12 combinaciones en la salida de BenchmarkDotNet; los valores
-omitidos están dentro del mismo rango de ruido.)
+(Full table of 12 combinations in the BenchmarkDotNet output; the omitted values
+fall within the same noise range.)
 
-## Conclusiones
+## Conclusions
 
-1. **`FlushEveryRows` no afecta el throughput observable en este volumen.** El
-   `StreamWriter` de CSV ya bufferiza internamente (`FileBufferBytes`); el `FlushAsync`
-   periódico solo fuerza el vaciado a disco antes de tiempo — a 200k filas su costo
-   se pierde en el ruido. Su valor real es acotar cuánto se puede perder ante un
-   corte (memoria/tiempo desde el último flush), no acelerar el export. Default
-   `10_000` es razonable; no hace falta tunearlo salvo que se quiera un compromiso
-   distinto entre "cuánto se pierde si corta" y overhead de syscalls de flush.
-   `FlushAsync` en `XlsxExportWriter` es un no-op (`ValueTask.CompletedTask`) —
-   `FlushEveryRows` **no tiene ningún efecto** en XLSX; solo dispara `progress.Report`.
-2. **`FileBufferBytes` tiene efecto marginal en este rango (64 KB vs 1 MB).** Subir
-   el buffer del `StreamWriter`/`FileStream` reduce syscalls de escritura pero a
-   este volumen el SO ya amortigua vía page cache. Default `128 * 1024` (128 KB) está
-   bien; solo subirlo si se exportan archivos muy grandes (cientos de millones de
-   filas) sobre almacenamiento con latencia alta (red/NFS).
-3. **XLSX es ~5x más lento y ~7x más costoso en memoria que CSV para el mismo
-   volumen** (por fila: generación de OOXML — estilos, shared strings, compresión
-   zip — vía MiniExcel, no por el puente streaming de `XlsxExportWriter`). Preferir
-   **CSV** cuando el consumidor lo acepte; usar XLSX solo cuando el formato de
-   salida lo exija. Esto no es un problema de memoria O(1) — el consumo de XLSX
-   sigue siendo plano respecto al nº de filas (ver `docs/04-streaming-strategy.md`),
-   solo tiene una constante por fila más alta.
+1. **`FlushEveryRows` has no observable effect on throughput at this volume.** CSV's
+   `StreamWriter` already buffers internally (`FileBufferBytes`); the periodic
+   `FlushAsync` only forces an early flush to disk — at 200k rows its cost is lost
+   in the noise. Its real value is bounding how much could be lost on a disconnect
+   (memory/time since the last flush), not speeding up the export. The default
+   `10_000` is reasonable; no need to tune it unless a different trade-off is wanted
+   between "how much is lost on disconnect" and flush syscall overhead.
+   `FlushAsync` in `XlsxExportWriter` is a no-op (`ValueTask.CompletedTask`) —
+   `FlushEveryRows` has **no effect at all** on XLSX; it only triggers `progress.Report`.
+2. **`FileBufferBytes` has a marginal effect in this range (64 KB vs 1 MB).** Raising
+   the `StreamWriter`/`FileStream` buffer reduces write syscalls, but at this volume
+   the OS already smooths this out via the page cache. The default `128 * 1024` (128 KB) is
+   fine; only raise it when exporting very large files (hundreds of millions of
+   rows) over high-latency storage (network/NFS).
+3. **XLSX is ~5x slower and ~7x more memory-costly than CSV for the same
+   volume** (per row: OOXML generation — styles, shared strings, zip
+   compression — via MiniExcel, not the streaming bridge in `XlsxExportWriter`). Prefer
+   **CSV** when the consumer accepts it; use XLSX only when the output format
+   requires it. This is not an O(1) memory problem — XLSX memory usage
+   remains flat with respect to row count (see `docs/04-streaming-strategy.md`),
+   it just has a higher per-row constant.
 
-## Fuera de alcance de este benchmark: `Oracle:FetchSizeBytes`
+## Out of scope for this benchmark: `Oracle:FetchSizeBytes`
 
-`FetchSizeBytes` (`OracleRecordReader`, ver `docs/05-configuration.md`) solo tiene
-efecto con un listener Oracle real (acota el lote de red por round-trip del cursor).
-No se puede medir con el reader sintético. Sin una instancia Oracle disponible en este
-entorno (mismo bloqueo que T3.6 — Testcontainers requiere Docker, no disponible aquí),
-queda como guía de configuración sin benchmark propio:
+`FetchSizeBytes` (`OracleRecordReader`, see `docs/05-configuration.md`) only has
+an effect with a real Oracle listener (it bounds the network batch per cursor round trip).
+It cannot be measured with the synthetic reader. Without an Oracle instance available in this
+environment (same blocker as T3.6 — Testcontainers requires Docker, unavailable here),
+it remains a configuration guideline without its own benchmark:
 
-- Default `1 MiB` es un punto de partida razonable (balance entre round-trips de red
-  y memoria del buffer de fetch).
-- Redes de alta latencia hacia el listener → subir `FetchSizeBytes` reduce round-trips.
-- Filas muy anchas (muchas columnas / LOBs) → bajar `FetchSizeBytes` si la latencia
-  por lote se vuelve visible, ya que cada lote debe completarse antes de liberar la
-  primera fila al pipeline.
-- Revisar con `tools/HExporter.MemProbe` + Oracle real cuando haya un entorno con
-  Docker/Testcontainers disponible (pendiente en T3.6).
+- Default `1 MiB` is a reasonable starting point (balance between network
+  round trips and fetch buffer memory).
+- High-latency networks to the listener → raising `FetchSizeBytes` reduces round trips.
+- Very wide rows (many columns / LOBs) → lower `FetchSizeBytes` if per-batch
+  latency becomes noticeable, since each batch must complete before the
+  first row is released to the pipeline.
+- Revisit with `tools/HExporter.MemProbe` + real Oracle once an environment with
+  Docker/Testcontainers is available (pending in T3.6).

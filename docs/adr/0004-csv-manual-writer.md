@@ -1,25 +1,25 @@
-# ADR-0004 — Escritura CSV manual vs. CsvHelper
+# ADR-0004 — Manual CSV writing vs. CsvHelper
 
-**Estado:** Aceptado · **Fecha:** 2026-07-13
+**Status:** Accepted · **Date:** 2026-07-13
 
-## Contexto
+## Context
 
-CSV es el formato principal para volúmenes masivos (sin límite de filas). Necesitamos escritura incremental, control de quoting/encoding y máximo rendimiento en el hot path.
+CSV is the primary format for massive volumes (no row limit). We need incremental writing, control over quoting/encoding, and maximum performance in the hot path.
 
-## Decisión
+## Decision
 
-Escribir CSV con **`StreamWriter` directo** + lógica propia de quoting RFC 4180, en `CsvExportWriter`. No se adopta CsvHelper para la escritura.
+Write CSV with a **direct `StreamWriter`** + custom RFC 4180 quoting logic, in `CsvExportWriter`. CsvHelper is not adopted for writing.
 
-## Consecuencias
+## Consequences
 
-- ✅ Control total del hot path: sin reflexión, sin mapeos por objeto, mínimas asignaciones (permite `ISpanFormattable.TryFormat`).
-- ✅ Cero dependencia extra para el camino más caliente.
-- ➖ Debemos implementar y testear el quoting/escaping nosotros (cubierto en E4/tests).
+- ✅ Full control of the hot path: no reflection, no per-object mapping, minimal allocations (enables `ISpanFormattable.TryFormat`).
+- ✅ Zero extra dependency on the hottest path.
+- ➖ We must implement and test the quoting/escaping ourselves (covered in E4/tests).
 
-## Alternativas descartadas
+## Rejected alternatives
 
-- **CsvHelper:** excelente para mapeo objeto↔CSV, pero orientado a records tipados; overhead innecesario para un pipeline por `IRecordReader` fila-cruda. Se mantiene como opción si se requiere mapeo complejo.
+- **CsvHelper:** excellent for object↔CSV mapping, but geared toward typed records; unnecessary overhead for a raw-row `IRecordReader` pipeline. Kept as an option if complex mapping is needed.
 
-## Nota
+## Note
 
-La lógica de quoting es pequeña y estable; el riesgo de implementarla es bajo frente al beneficio de rendimiento y control.
+The quoting logic is small and stable; the risk of implementing it ourselves is low compared to the performance and control benefits.

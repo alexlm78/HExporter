@@ -1,25 +1,25 @@
-# ADR-0005 — Estrategia de particionado para volúmenes masivos
+# ADR-0005 — Partitioning strategy for massive volumes
 
-**Estado:** Diferido (v2) · **Fecha:** 2026-07-13
+**Status:** Deferred (v2) · **Date:** 2026-07-13
 
-## Contexto
+## Context
 
-Dos motivos para particionar la salida en varios archivos/hojas:
-1. **Límite duro de XLSX:** 1.048.576 filas por hoja.
-2. **Ergonomía/entrega:** archivos muy grandes son difíciles de abrir/transferir; puede convenir trocear (por tamaño, por nº de filas o por clave).
+Two reasons to partition the output into multiple files/sheets:
+1. **Hard XLSX limit:** 1,048,576 rows per sheet.
+2. **Ergonomics/delivery:** very large files are hard to open/transfer; it may be worth splitting them (by size, row count, or key).
 
-## Decisión (v1)
+## Decision (v1)
 
-- v1 soporta particionado **solo a nivel de hoja XLSX** (`RowLimitStrategy=NewSheet`, opcional) y por defecto `Fail` al exceder el límite.
-- Particionado multi-archivo (`reporte_0001.csv/xlsx`, `_0002`, …) se **difiere a v2**.
+- v1 supports partitioning **only at the XLSX sheet level** (`RowLimitStrategy=NewSheet`, optional) and defaults to `Fail` when the limit is exceeded.
+- Multi-file partitioning (`reporte_0001.csv/xlsx`, `_0002`, …) is **deferred to v2**.
 
-## Diseño propuesto (v2)
+## Proposed design (v2)
 
 - `PartitionStrategy`: `None` | `ByRowCount(n)` | `BySizeBytes(n)` | `ByKeyColumn(col)`.
-- El `ExportService` rota el `Stream`/writer al cruzar el umbral, manteniendo el streaming.
-- Nomenclatura con índice cero-padded + manifiesto opcional (`manifest.json` con nº de partes, filas por parte, checksums).
+- `ExportService` rotates the `Stream`/writer when crossing the threshold, preserving streaming.
+- Zero-padded index naming + optional manifest (`manifest.json` with part count, rows per part, checksums).
 
-## Consecuencias
+## Consequences
 
-- ✅ v1 se mantiene simple y enfocada en el objetivo de memoria.
-- ➖ Reportes XLSX > 1M filas deben usar CSV en v1 (documentado en [04](../04-streaming-strategy.md) §6).
+- ✅ v1 stays simple and focused on the memory goal.
+- ➖ XLSX reports > 1M rows must use CSV in v1 (documented in [04](../04-streaming-strategy.md) §6).

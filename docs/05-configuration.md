@@ -1,4 +1,4 @@
-# 05 — Configuración y CLI
+# 05 — Configuration and CLI
 
 ## 1. `appsettings.json`
 
@@ -40,24 +40,24 @@
 }
 ```
 
-`Oracle.ConnectRetryAttempts` (Polly): reintentos con backoff exponencial ante fallo transitorio al **abrir** la conexión (listener caído, red). `0` = deshabilitado. No reintenta cancelación (Ctrl+C) ni errores de configuración (connection string vacío).
+`Oracle.ConnectRetryAttempts` (Polly): retries with exponential backoff on a transient failure while **opening** the connection (listener down, network). `0` = disabled. Does not retry on cancellation (Ctrl+C) or configuration errors (empty connection string).
 
-## 2. Secretos / credenciales
+## 2. Secrets / credentials
 
-**Nunca** hardcodear la cadena de conexión ni commitear un archivo `[dot]env` con credenciales reales (ver `env.example` en la raíz del repo, plantilla sin secretos). Orden de precedencia (mayor gana):
+**Never** hardcode the connection string or commit a `[dot]env` file with real credentials (see `env.example` at the repo root, a template without secrets). Precedence order (highest wins):
 
-1. **CLI** — parámetros puntuales de la ejecución (`--sql`, `--table`, `--bind`, `--format`, `--out`, etc.).
-2. **Variables de entorno reales del proceso** — `HEXPORTER_Oracle__ConnectionString`, `HEXPORTER_Oracle__FetchSizeBytes`, etc. (prefijo `HEXPORTER_`, `__` como separador jerárquico).
-3. **Archivo `[dot]env`** — cargado por `HExporter.Cli` al iniciar (`DotNetEnv`) si existe en el directorio actual, o en la ruta indicada por `--env-file <ruta>`. Si una variable ya existe en el entorno real del proceso, el archivo **no la sobreescribe** (así se cumple el orden 2 > 3).
-4. **`appsettings.json`** — valores por defecto no sensibles (`FetchSizeBytes`, `CommandTimeoutSeconds`, etc.).
+1. **CLI** — one-off run parameters (`--sql`, `--table`, `--bind`, `--format`, `--out`, etc.).
+2. **Real process environment variables** — `HEXPORTER_Oracle__ConnectionString`, `HEXPORTER_Oracle__FetchSizeBytes`, etc. (`HEXPORTER_` prefix, `__` as hierarchical separator).
+3. **`[dot]env` file** — loaded by `HExporter.Cli` at startup (`DotNetEnv`) if present in the current directory, or at the path given by `--env-file <path>`. If a variable already exists in the process's real environment, the file **does not override it** (this preserves precedence order 2 > 3).
+4. **`appsettings.json`** — non-sensitive defaults (`FetchSizeBytes`, `CommandTimeoutSeconds`, etc.).
 
-`--env-file` con ruta inexistente es un **error de argumentos** (exit code 1); sin la opción, el archivo es opcional — su ausencia no falla, simplemente no aporta valores.
+`--env-file` with a nonexistent path is an **argument error** (exit code 1); without the option, the file is optional — its absence does not fail, it simply contributes no values.
 
-En producción, preferir **Oracle Wallet** (autenticación externa, sin password en texto) inyectado vía variables de entorno reales del orquestador (Kubernetes Secret, Vault, etc.), no un archivo `[dot]env` en disco. Ver [06-nfr-ops.md](./06-nfr-ops.md) §Seguridad.
+In production, prefer **Oracle Wallet** (external authentication, no plaintext password) injected via real environment variables from the orchestrator (Kubernetes Secret, Vault, etc.), not a `[dot]env` file on disk. See [06-nfr-ops.md](./06-nfr-ops.md) §Security.
 
-## 3. Perfil de reporte (`report.json`)
+## 3. Report profile (`report.json`)
 
-Definición declarativa reutilizable de un reporte:
+Reusable declarative definition of a report:
 
 ```json
 {
@@ -70,51 +70,51 @@ Definición declarativa reutilizable de un reporte:
 }
 ```
 
-Los `binds` pueden sobreescribirse en la CLI (`--bind desde=2026-02-01`).
+`binds` can be overridden on the CLI (`--bind desde=2026-02-01`).
 
-## 4. Interfaz CLI
+## 4. CLI interface
 
 ```
-hexporter export [opciones]
+hexporter export [options]
 
-Opciones:
-  --sql <texto>            Consulta SELECT a exportar. (excluyente con --table y --profile)
-  --table <owner.tabla>    Exporta la tabla/vista completa (SELECT *).
-  --profile <ruta>         Ruta a un report.json.
-  --format <csv|xlsx>      Formato de salida. (def: csv)
-  --out <ruta>             Archivo destino. '-' = stdout (solo csv).
-  --bind <k=v>             Bind variable (repetible). Ej: --bind desde=2026-01-01
-  --delimiter <char>       Delimitador CSV. (def: ,)
-  --no-headers             Omite fila de encabezados.
-  --encoding <nombre>      utf-8 | utf-8-bom | latin1. (def: utf-8)
-  --flush-every <n>        Filas entre flushes. (def: 10000)
-  --fetch-size <bytes>     FetchSize del driver Oracle. (def: 1048576)
-  --sheet <nombre>         Nombre de hoja XLSX. (def: Datos)
-  --env-file <ruta>        Archivo [dot]env alternativo (def: [dot]env en el directorio actual, opcional).
-  -v, --verbose            Log detallado.
+Options:
+  --sql <text>             SELECT query to export. (mutually exclusive with --table and --profile)
+  --table <owner.table>    Exports the full table/view (SELECT *).
+  --profile <path>         Path to a report.json.
+  --format <csv|xlsx>      Output format. (default: csv)
+  --out <path>             Destination file. '-' = stdout (csv only).
+  --bind <k=v>             Bind variable (repeatable). E.g.: --bind desde=2026-01-01
+  --delimiter <char>       CSV delimiter. (default: ,)
+  --no-headers             Skips the header row.
+  --encoding <name>        utf-8 | utf-8-bom | latin1. (default: utf-8)
+  --flush-every <n>        Rows between flushes. (default: 10000)
+  --fetch-size <bytes>     Oracle driver FetchSize. (default: 1048576)
+  --sheet <name>           XLSX sheet name. (default: Datos)
+  --env-file <path>        Alternate [dot]env file (default: [dot]env in current directory, optional).
+  -v, --verbose            Verbose logging.
 
-Códigos de salida:
-  0  Éxito
-  1  Error de validación / argumentos
-  2  Error de conexión / SQL Oracle
-  3  Error de escritura / I/O
-  130 Cancelado por el usuario (Ctrl+C)
+Exit codes:
+  0  Success
+  1  Validation / argument error
+  2  Oracle connection / SQL error
+  3  Write / I/O error
+  130 Cancelled by the user (Ctrl+C)
 ```
 
-### Ejemplos
+### Examples
 
 ```bash
-# Tabla completa a CSV
+# Full table to CSV
 hexporter export --table VENTAS.PEDIDOS --format csv --out pedidos.csv
 
-# Consulta parametrizada a XLSX
+# Parameterized query to XLSX
 hexporter export \
   --sql "SELECT * FROM ventas WHERE fecha >= :d" \
   --bind d=2026-01-01 --format xlsx --out ventas.xlsx --sheet Ventas
 
-# Por perfil, sobreescribiendo un bind
+# By profile, overriding a bind
 hexporter export --profile reports/ventas.json --bind hasta=2026-02-28
 
-# A stdout, encadenado con gzip
+# To stdout, piped with gzip
 hexporter export --table LOGS --format csv --out - | gzip > logs.csv.gz
 ```

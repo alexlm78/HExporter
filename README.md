@@ -1,102 +1,102 @@
 # HExporter
 
-Exportador de reportes de gran volumen desde **Oracle** a **CSV** o **XLSX**, escribiendo **directamente de la base al archivo mediante streaming**, sin cargar el resultado en memoria.
+Large-volume report exporter from **Oracle** to **CSV** or **XLSX**, writing **directly from the database to the file via streaming**, without loading the result into memory.
 
-Diseñado para reportes de millones de filas con un consumo de memoria **constante y acotado**, independiente del tamaño del resultado — evita que el equipo se congele o colapse por presión de memoria (OOM / pausas de GC).
+Designed for reports with millions of rows with **constant and bounded** memory usage, independent of the result size — prevents the machine from freezing or crashing due to memory pressure (OOM / GC pauses).
 
-## Por qué
+## Why
 
-Generar reportes cargando todo el resultado en memoria (`DataTable`, listas, o librerías de Excel que arman el workbook completo) hace que la RAM crezca con el tamaño del reporte → `OutOfMemoryException` y congelamientos con volúmenes altos. HExporter transmite **una fila a la vez** desde el cursor de Oracle hasta el archivo, con memoria O(1) respecto al nº de filas.
+Generating reports by loading the entire result into memory (`DataTable`, lists, or Excel libraries that build the whole workbook in RAM) makes RAM grow with the report size → `OutOfMemoryException` and freezes with high volumes. HExporter streams **one row at a time** from the Oracle cursor to the file, with O(1) memory relative to the number of rows.
 
-## Cómo funciona
+## How it works
 
 ```
-Oracle (cursor server-side)
-  → FetchSize (lote de red acotado)
-  → 1 fila viva en el proceso
-  → writer con buffer + flush periódico
-  → archivo (CSV / XLSX)
+Oracle (server-side cursor)
+  → FetchSize (bounded network batch)
+  → 1 live row in the process
+  → writer with buffer + periodic flush
+  → file (CSV / XLSX)
 ```
 
-Nunca se materializa el conjunto completo. Detalle en [`docs/04-streaming-strategy.md`](./docs/04-streaming-strategy.md).
+The full result set is never materialized. Details in [`docs/04-streaming-strategy.md`](./docs/04-streaming-strategy.md).
 
-## Rendimiento verificado
+## Verified performance
 
-Prueba de memoria con 10M filas sintéticas (Apple Silicon, Server GC):
+Memory test with 10M synthetic rows (Apple Silicon, Server GC):
 
-| Formato | Filas | Archivo | Peak memoria | Throughput |
+| Format | Rows | File | Peak memory | Throughput |
 |---------|-------|---------|--------------|-----------|
-| CSV | 10.000.000 | 491 MB | **~126 MB** | ~3.9M filas/s |
-| XLSX | 1.000.000 | 35 MB | **~152 MB** | ~0.4M filas/s |
+| CSV | 10,000,000 | 491 MB | **~126 MB** | ~3.9M rows/s |
+| XLSX | 1,000,000 | 35 MB | **~152 MB** | ~0.4M rows/s |
 
-La memoria **no crece** con el nº de filas. Reproducir: ver [MemProbe](#prueba-de-memoria).
+Memory **does not grow** with the number of rows. To reproduce: see [MemProbe](#memory-test).
 
 ## Stack
 
 - **.NET 10** (LTS), C#
-- `Oracle.ManagedDataAccess.Core` — driver 100% managed, sin cliente nativo (cross-platform)
-- `MiniExcel` — XLSX en streaming
+- `Oracle.ManagedDataAccess.Core` — 100% managed driver, no native client (cross-platform)
+- `MiniExcel` — streaming XLSX
 - `System.CommandLine` — CLI · `Serilog` — logging · `Microsoft.Extensions.Hosting` — DI/config
 
-## Requisitos
+## Requirements
 
-- SDK de .NET 10
-- Acceso a una base Oracle (cuenta con `SELECT` sobre los objetos a exportar)
+- .NET 10 SDK
+- Access to an Oracle database (account with `SELECT` on the objects to export)
 
-## Compilar y probar
+## Build and test
 
 ```bash
 dotnet build
 dotnet test tests/HExporter.UnitTests
 ```
 
-## Uso
+## Usage
 
 ```bash
-# Tabla completa a CSV
+# Full table to CSV
 hexporter export --table VENTAS.PEDIDOS --format csv --out pedidos.csv
 
-# Consulta parametrizada a XLSX (bind variables)
+# Parameterized query to XLSX (bind variables)
 hexporter export \
   --sql "SELECT * FROM ventas WHERE fecha >= :d" \
   --bind d=2026-01-01 --format xlsx --out ventas.xlsx --sheet Ventas
 
-# Por perfil declarativo, sobreescribiendo un bind
+# By declarative profile, overriding a bind
 hexporter export --profile reports/ventas.json --bind hasta=2026-02-28
 
-# A stdout, encadenado con gzip (solo CSV)
+# To stdout, piped with gzip (CSV only)
 hexporter export --table LOGS --format csv --out - | gzip > logs.csv.gz
 ```
 
-Ejecutando desde el código fuente:
+Running from source:
 ```bash
 dotnet run --project src/HExporter.Cli -- --help
 ```
 
-### Opciones principales
+### Main options
 
-| Opción | Descripción |
+| Option | Description |
 |--------|-------------|
-| `--sql` / `--table` / `--profile` | Origen (consulta, tabla, o perfil `report.json`) |
-| `--format csv\|xlsx` | Formato de salida (def. csv) |
-| `--out <ruta>` | Destino (`-` = stdout, solo CSV) |
-| `--bind k=v` | Bind variable (repetible) |
-| `--delimiter` | Delimitador CSV (def. `,`) |
-| `--sheet` | Nombre de hoja XLSX (def. `Datos`) |
-| `--flush-every` | Filas entre flushes (def. 10.000) |
-| `--no-headers` | Omite encabezados |
+| `--sql` / `--table` / `--profile` | Source (query, table, or `report.json` profile) |
+| `--format csv\|xlsx` | Output format (default csv) |
+| `--out <path>` | Destination (`-` = stdout, CSV only) |
+| `--bind k=v` | Bind variable (repeatable) |
+| `--delimiter` | CSV delimiter (default `,`) |
+| `--sheet` | XLSX sheet name (default `Datos`) |
+| `--flush-every` | Rows between flushes (default 10,000) |
+| `--no-headers` | Skips headers |
 
-Referencia completa: [`docs/05-configuration.md`](./docs/05-configuration.md).
+Full reference: [`docs/05-configuration.md`](./docs/05-configuration.md).
 
-## Configuración
+## Configuration
 
-Cadena de conexión y opciones vía `appsettings.json` o variables de entorno. **Nunca** hardcodear credenciales — usar env, User Secrets u Oracle Wallet:
+Connection string and options via `appsettings.json` or environment variables. **Never** hardcode credentials — use env vars, User Secrets, or Oracle Wallet:
 
 ```bash
 export HEXPORTER_Oracle__ConnectionString="User Id=rpt;Password=***;Data Source=..."
 ```
 
-## Perfil de reporte (`report.json`)
+## Report profile (`report.json`)
 
 ```json
 {
@@ -108,50 +108,50 @@ export HEXPORTER_Oracle__ConnectionString="User Id=rpt;Password=***;Data Source=
 }
 ```
 
-## Prueba de memoria
+## Memory test
 
-Valida el objetivo del proyecto (memoria plana) sin necesidad de Oracle — usa un generador de filas sintéticas:
+Validates the project's core goal (flat memory) without needing Oracle — uses a synthetic row generator:
 
 ```bash
 dotnet run -c Release --project tools/HExporter.MemProbe -- --rows 10000000 --format csv --out /tmp/probe.csv
 ```
 
-Para la ruta Oracle real: sembrar con [`scripts/seed_10m.sql`](./scripts/seed_10m.sql) y exportar la tabla `HEXPORTER_STRESS`. Detalle en [`tools/HExporter.MemProbe/README.md`](./tools/HExporter.MemProbe/README.md).
+For the real Oracle path: seed with [`scripts/seed_10m.sql`](./scripts/seed_10m.sql) and export the `HEXPORTER_STRESS` table. Details in [`tools/HExporter.MemProbe/README.md`](./tools/HExporter.MemProbe/README.md).
 
-## Estructura del repositorio
+## Repository structure
 
 ```
 src/
-  HExporter.Core            puertos + modelos (sin dependencias)
-  HExporter.Application     ExportService (orquestación), validación, perfiles
-  HExporter.Infrastructure  adaptador Oracle (lectura streaming)
-  HExporter.Export          writers CSV / XLSX
+  HExporter.Core            ports + models (no dependencies)
+  HExporter.Application     ExportService (orchestration), validation, profiles
+  HExporter.Infrastructure  Oracle adapter (streaming reader)
+  HExporter.Export          CSV / XLSX writers
   HExporter.Cli             CLI (hexporter)
-tools/HExporter.MemProbe    prueba de memoria / volumen
-tests/                      unitarias + integración (Testcontainers Oracle)
-docs/                       diseño de arquitectura (00–08 + ADRs)
-scripts/                    seed SQL para pruebas
+tools/HExporter.MemProbe    memory / volume test
+tests/                      unit + integration (Testcontainers Oracle)
+docs/                       architecture design (00–08 + ADRs)
+scripts/                    seed SQL for tests
 ```
 
-## Empaquetado y distribución
+## Packaging and distribution
 
-**Framework-dependent** (requiere .NET 10 runtime instalado en destino):
+**Framework-dependent** (requires .NET 10 runtime installed on the target):
 
 ```bash
 dotnet publish src/HExporter.Cli -c Release -o ./publish
 ```
 
-**Self-contained single-file** (no requiere .NET instalado; incluye el runtime):
+**Self-contained single-file** (does not require .NET installed; includes the runtime):
 
 ```bash
 dotnet publish src/HExporter.Cli -c Release -r linux-x64 -p:PublishSingleFile=true -o ./publish
-# RIDs alternativos: win-x64, osx-arm64, osx-x64, linux-arm64
+# Alternative RIDs: win-x64, osx-arm64, osx-x64, linux-arm64
 ```
 
-Sin `PublishTrimmed`: `Oracle.ManagedDataAccess.Core` usa reflection extensivamente y
-no es trim-safe (recortarlo puede romper la carga del driver en runtime).
+Without `PublishTrimmed`: `Oracle.ManagedDataAccess.Core` uses reflection extensively and
+is not trim-safe (trimming it can break driver loading at runtime).
 
-**Docker** (imagen framework-dependent, runtime `mcr.microsoft.com/dotnet/runtime:10.0`):
+**Docker** (framework-dependent image, `mcr.microsoft.com/dotnet/runtime:10.0` runtime):
 
 ```bash
 docker build -t hexporter .
@@ -161,14 +161,14 @@ docker run --rm \
   hexporter export --table VENTAS.PEDIDOS --format csv --out /out/pedidos.csv
 ```
 
-Credenciales solo por variable de entorno (nunca hardcodeadas ni en la imagen, ver
-`docs/06-nfr-ops.md`). El volumen `/out` recibe el archivo exportado.
+Credentials only via environment variable (never hardcoded or baked into the image, see
+`docs/06-nfr-ops.md`). The `/out` volume receives the exported file.
 
-## Límites conocidos
+## Known limits
 
-- XLSX: máx **1.048.576 filas por hoja** (límite del formato). Para volúmenes mayores usar CSV, o `RowLimitStrategy=NewSheet`.
-- v1 no reanudable tras un corte de conexión (se re-ejecuta el reporte).
+- XLSX: max **1,048,576 rows per sheet** (format limit). For larger volumes use CSV, or `RowLimitStrategy=NewSheet`.
+- v1 is not resumable after a connection drop (the report is re-run).
 
-## Documentación
+## Documentation
 
-Diseño completo en [`docs/`](./docs/README.md): visión, arquitectura, diseño técnico, estrategia de streaming, configuración, NFR/seguridad, pruebas, backlog y ADRs. Lineamientos para contribuir en [`CLAUDE.md`](./CLAUDE.md).
+Full design in [`docs/`](./docs/README.md): vision, architecture, technical design, streaming strategy, configuration, NFR/security, testing, backlog, and ADRs. Contribution guidelines in [`CLAUDE.md`](./CLAUDE.md).

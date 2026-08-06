@@ -1,52 +1,52 @@
-# 06 — Requisitos No Funcionales y Operación
+# 06 — Non-Functional Requirements and Operations
 
-## 1. Rendimiento
+## 1. Performance
 
-| Métrica | Objetivo |
+| Metric | Target |
 |---------|----------|
-| Memoria de proceso (working set) | < 300 MB, **estable** e independiente del nº de filas |
-| Throughput CSV | ≥ 50.000 filas/seg (sujeto a red/DB/disco) |
-| Throughput XLSX | ≥ 20.000 filas/seg (overhead de formato) |
-| Tiempo a primera fila (TTFB) | < 2 s con `FetchSize` por defecto |
+| Process memory (working set) | < 300 MB, **stable** and independent of row count |
+| CSV throughput | ≥ 50,000 rows/sec (network/DB/disk dependent) |
+| XLSX throughput | ≥ 20,000 rows/sec (format overhead) |
+| Time to first row (TTFB) | < 2 s with default `FetchSize` |
 
-Palancas de tuning: `FetchSizeBytes`, `FlushEveryRows`, `FileBufferBytes`, GC de servidor, disco de salida (SSD/local vs. montaje de red).
+Tuning levers: `FetchSizeBytes`, `FlushEveryRows`, `FileBufferBytes`, server GC, output disk (SSD/local vs. network mount).
 
-## 2. Confiabilidad
+## 2. Reliability
 
-- **Cancelación cooperativa** vía `CancellationToken` (Ctrl+C → `PosixSignalRegistration`/`Console.CancelKeyPress`).
-- **Política de archivo parcial:** escribir a `destino.tmp` y renombrar atómicamente al terminar (`File.Move`); ante fallo/cancelación, borrar el `.tmp`. Evita entregar reportes truncados como válidos.
-- **Reintentos de conexión:** política de reintentos (Polly) solo en la **apertura** de conexión; una vez iniciado el streaming, un corte aborta y se reintenta el reporte completo (no es reanudable en v1).
-- **Timeouts:** `CommandTimeout = 0` (sin límite) para reportes largos, configurable; timeout de conexión sí acotado.
+- **Cooperative cancellation** via `CancellationToken` (Ctrl+C → `PosixSignalRegistration`/`Console.CancelKeyPress`).
+- **Partial file policy:** write to `destino.tmp` and atomically rename on completion (`File.Move`); on failure/cancellation, delete the `.tmp` file. Prevents delivering truncated reports as valid.
+- **Connection retries:** retry policy (Polly) only on connection **opening**; once streaming has started, a disconnection aborts and the full report must be retried (not resumable in v1).
+- **Timeouts:** `CommandTimeout = 0` (no limit) for long reports, configurable; connection timeout is bounded.
 
-## 3. Seguridad
+## 3. Security
 
-- **Credenciales:** nunca en texto plano ni en logs. Preferir **Oracle Wallet** / autenticación externa en producción. Secretos vía variables de entorno o Key Vault.
-- **SQL Injection:** usar **siempre bind variables** para parámetros. `--table` se valida contra un patrón `owner.objeto` (identificadores) y se cita con `DBMS_ASSERT`-equivalente del lado app; nunca concatenar valores de usuario en el SQL.
-- **Least privilege:** la cuenta Oracle debe tener solo `SELECT` sobre los objetos requeridos.
-- **PII / datos sensibles:** los reportes pueden contener datos personales. Definir permisos de archivo de salida (0600), ubicación de escritura controlada, y política de retención/borrado. No loguear valores de filas.
-- **Path traversal:** validar/normalizar `--out` contra un directorio base permitido si corre en contexto multiusuario. → `ExportSecurity:AllowedOutputDirectory` (`HEXPORTER_ExportSecurity__AllowedOutputDirectory`); sin definir = sin restricción (uso normal de CLI de un solo usuario).
+- **Credentials:** never in plain text or in logs. Prefer **Oracle Wallet** / external authentication in production. Secrets via environment variables or Key Vault.
+- **SQL Injection:** **always** use bind variables for parameters. `--table` is validated against an `owner.object` pattern (identifiers) and quoted with an app-side `DBMS_ASSERT` equivalent; never concatenate user values into SQL.
+- **Least privilege:** the Oracle account must have only `SELECT` on the required objects.
+- **PII / sensitive data:** reports may contain personal data. Define output file permissions (0600), a controlled write location, and a retention/deletion policy. Do not log row values.
+- **Path traversal:** validate/normalize `--out` against an allowed base directory when running in a multi-user context. → `ExportSecurity:AllowedOutputDirectory` (`HEXPORTER_ExportSecurity__AllowedOutputDirectory`); undefined = no restriction (normal single-user CLI usage).
 
-## 4. Observabilidad
+## 4. Observability
 
-- **Logging estructurado (Serilog):** inicio/fin de exportación, nº de filas, bytes, duración, throughput, código de salida. **Nunca** el contenido de las filas.
-- **Progreso:** reporte cada `FlushEveryRows` a consola (`stderr` para no contaminar `stdout` cuando `--out -`).
-- **Métricas (opcional):** exponer contadores (filas/seg, memoria) vía `System.Diagnostics.Metrics` / OpenTelemetry si se integra a un colector.
-- **Correlación:** `ExportId` (GUID) por ejecución en todos los logs.
+- **Structured logging (Serilog):** export start/end, row count, bytes, duration, throughput, exit code. **Never** row content.
+- **Progress:** reported every `FlushEveryRows` to the console (`stderr`, to avoid polluting `stdout` when `--out -`).
+- **Metrics (optional):** expose counters (rows/sec, memory) via `System.Diagnostics.Metrics` / OpenTelemetry if integrated with a collector.
+- **Correlation:** `ExportId` (GUID) per run in all logs.
 
-## 5. Portabilidad / Despliegue
+## 5. Portability / Deployment
 
-- Cross-platform (.NET 8): Linux/Windows/macOS. `Oracle.ManagedDataAccess.Core` es 100% managed (sin cliente Oracle nativo).
-- Empaquetado: framework-dependent (requiere runtime .NET 8) o self-contained single-file para hosts sin runtime.
-- Contenedor: imagen base `mcr.microsoft.com/dotnet/runtime:8.0`.
+- Cross-platform (.NET 8): Linux/Windows/macOS. `Oracle.ManagedDataAccess.Core` is 100% managed (no native Oracle client).
+- Packaging: framework-dependent (requires .NET 8 runtime) or self-contained single-file for hosts without a runtime.
+- Container: base image `mcr.microsoft.com/dotnet/runtime:8.0`.
 
-## 6. Mantenibilidad
+## 6. Maintainability
 
-- Puertos/adaptadores → agregar formato = nueva clase `IExportWriter` + registro en factory.
-- Config centralizada y tipada (`IOptions<T>`).
-- Cobertura de pruebas objetivo ≥ 80% en `Core`/`Application`.
+- Ports/adapters → adding a format = new `IExportWriter` class + factory registration.
+- Centralized, typed configuration (`IOptions<T>`).
+- Target test coverage ≥ 80% in `Core`/`Application`.
 
-## 7. Límites conocidos (v1)
+## 7. Known limits (v1)
 
-- No reanudable tras corte (se re-ejecuta el reporte).
-- XLSX limitado a 1.048.576 filas/hoja (mitigación en [04](./04-streaming-strategy.md) §6).
-- Sin paralelización de particiones (v2).
+- Not resumable after a disconnect (the report is re-run).
+- XLSX limited to 1,048,576 rows/sheet (mitigation in [04](./04-streaming-strategy.md) §6).
+- No partition parallelization (v2).

@@ -1,77 +1,77 @@
-# 04 — Estrategia de Streaming Memoria-Segura (núcleo)
+# 04 — Memory-Safe Streaming Strategy (core)
 
-Este es el documento crítico: explica **por qué** el diseño no colapsa la memoria y **qué** hay que hacer/no hacer.
+This is the critical document: it explains **why** the design does not blow up memory and **what** to do / not do.
 
-## 1. Principio central
+## 1. Central principle
 
-El pipeline mantiene, en todo momento, **una sola fila viva** más un **buffer de salida acotado**:
+The pipeline maintains, at all times, **a single live row** plus a **bounded output buffer**:
 
 ```
 Oracle (server-side cursor)
-   → FetchSize buffer (driver, N bytes)      ← acotado
-   → 1 fila en CLR (la actual)               ← O(1)
-   → StreamWriter/MiniExcel buffer           ← acotado
-   → FileStream buffer                        ← acotado
-   → Disco
+   → FetchSize buffer (driver, N bytes)      ← bounded
+   → 1 row in the CLR (the current one)      ← O(1)
+   → StreamWriter/MiniExcel buffer           ← bounded
+   → FileStream buffer                        ← bounded
+   → Disk
 ```
 
-El uso de memoria es **O(ancho_de_fila + buffers)**, NO **O(número_de_filas)**. Da igual si el reporte tiene 1.000 o 1.000.000.000 de filas.
+Memory usage is **O(row_width + buffers)**, NOT **O(number_of_rows)**. It doesn't matter whether the report has 1,000 or 1,000,000,000 rows.
 
-## 2. Reglas duras (lo que NUNCA se hace)
+## 2. Hard rules (what is NEVER done)
 
 1. ❌ **No** `DataTable` / `DataSet` / `reader.Load()`.
-2. ❌ **No** `ToList()` / `ToArray()` sobre el resultado ni buffers de filas que crezcan sin límite.
-3. ❌ **No** librerías XLSX que construyan el workbook completo en memoria (ClosedXML, EPPlus en modo normal). Ver ADR-0003.
-4. ❌ **No** `string` gigantes concatenados (`StringBuilder` de todo el CSV). Se escribe al `Stream`.
-5. ❌ **No** cargar LOBs completos si se pueden transmitir (`InitialLOBFetchSize = -1`).
+2. ❌ **No** `ToList()` / `ToArray()` on the result, nor row buffers that grow unbounded.
+3. ❌ **No** XLSX libraries that build the full workbook in memory (ClosedXML, EPPlus in normal mode). See ADR-0003.
+4. ❌ **No** giant concatenated `string`s (`StringBuilder` for the entire CSV). It is written to the `Stream`.
+5. ❌ **No** loading complete LOBs when they can be streamed (`InitialLOBFetchSize = -1`).
 
-## 3. Lado Oracle: leer server-side
+## 3. Oracle side: reading server-side
 
-- `OracleDataReader` es **forward-only** y trae filas por lotes según `FetchSize`.
-- **`FetchSize`** (en bytes) controla cuánto trae el driver por ida a la red. Valor típico: **256 KB – 1 MB**.
-  - Muy bajo → muchas idas a la red, lento.
-  - Muy alto → más RAM por lote y más latencia de primera fila. **No** cargues todo.
-- `CommandBehavior.SequentialAccess`: permite procesar columnas en orden y hacer streaming de LOBs sin bufferizarlos completos.
-- El cursor vive en el servidor Oracle; el cliente solo mantiene el lote actual.
+- `OracleDataReader` is **forward-only** and fetches rows in batches according to `FetchSize`.
+- **`FetchSize`** (in bytes) controls how much the driver fetches per network round trip. Typical value: **256 KB – 1 MB**.
+  - Too low → many network round trips, slow.
+  - Too high → more RAM per batch and higher first-row latency. **Do not** load everything.
+- `CommandBehavior.SequentialAccess`: allows processing columns in order and streaming LOBs without fully buffering them.
+- The cursor lives on the Oracle server; the client only holds the current batch.
 
-Cálculo orientativo: `FetchSize` ÷ `bytes_por_fila` ≈ filas por lote. Ej.: 1 MB ÷ 200 B ≈ ~5.000 filas por ida de red, liberadas al avanzar.
+Rough calculation: `FetchSize` ÷ `bytes_per_row` ≈ rows per batch. E.g.: 1 MB ÷ 200 B ≈ ~5,000 rows per network round trip, released as it advances.
 
-## 4. Lado escritura: buffer + flush periódico
+## 4. Write side: buffer + periodic flush
 
-- El `StreamWriter`/MiniExcel acumulan en un buffer pequeño y lo vuelcan al `FileStream`.
-- **Flush cada N filas** (`FlushEveryRows`, def. 10.000) para que el buffer no crezca y para durabilidad parcial.
-- `FileStream` con `bufferSize` razonable (p. ej. 64–128 KB) y `useAsync: true`.
-- Considerar `FileOptions.SequentialScan` para I/O secuencial.
+- `StreamWriter`/MiniExcel accumulate into a small buffer and flush it to the `FileStream`.
+- **Flush every N rows** (`FlushEveryRows`, default 10,000) to prevent the buffer from growing and for partial durability.
+- `FileStream` with a reasonable `bufferSize` (e.g. 64–128 KB) and `useAsync: true`.
+- Consider `FileOptions.SequentialScan` for sequential I/O.
 
-## 5. Evitar asignaciones por fila (opcional, alto volumen)
+## 5. Avoiding per-row allocations (optional, high volume)
 
-Cuando el volumen lo justifique:
-- Accesores tipados en `IRecordReader` (`GetInt64`, `GetDecimal`, `GetString`) → evitan boxing de `object`.
-- Reusar un `char[]`/`Span<char>` buffer para formatear números/fechas (`ISpanFormattable.TryFormat`) en el writer CSV.
-- Evitar `string.Format`/interpolación por celda en el hot path.
+When volume justifies it:
+- Typed accessors on `IRecordReader` (`GetInt64`, `GetDecimal`, `GetString`) → avoid boxing of `object`.
+- Reuse a `char[]`/`Span<char>` buffer to format numbers/dates (`ISpanFormattable.TryFormat`) in the CSV writer.
+- Avoid `string.Format`/interpolation per cell in the hot path.
 
-Estas optimizaciones son **incrementales** y no cambian la arquitectura; medir antes (ver [07](./07-testing-strategy.md)).
+These optimizations are **incremental** and do not change the architecture; measure before applying them (see [07](./07-testing-strategy.md)).
 
-## 6. Límite de filas de XLSX y particionado
+## 6. XLSX row limit and partitioning
 
-XLSX permite máx. **1.048.576 filas/hoja**. Estrategias (config `XlsxOptions.RowLimitStrategy`):
+XLSX allows a max. of **1,048,576 rows/sheet**. Strategies (config `XlsxOptions.RowLimitStrategy`):
 
-| Estrategia | Comportamiento |
+| Strategy | Behavior |
 |-----------|----------------|
-| `Fail` (def.) | Aborta si se excede el límite. Seguro por defecto. |
-| `NewSheet` | Al llegar al límite, crea `Datos_2`, `Datos_3`, … en el mismo archivo. |
-| `NewFile` | Genera `reporte_0001.xlsx`, `reporte_0002.xlsx`, … (v2, ADR-0005). |
+| `Fail` (default) | Aborts if the limit is exceeded. Safe by default. |
+| `NewSheet` | On reaching the limit, creates `Datos_2`, `Datos_3`, … in the same file. |
+| `NewFile` | Generates `reporte_0001.xlsx`, `reporte_0002.xlsx`, … (v2, ADR-0005). |
 
-Para volúmenes que superen holgadamente el límite, **CSV es la elección natural** (sin límite de filas).
+For volumes that greatly exceed the limit, **CSV is the natural choice** (no row limit).
 
-`NewSheet` implementado en `XlsxExportWriter` sin romper streaming: MiniExcel decide multi-hoja si el `value` pasado a `SaveAs` implementa `IDictionary<string, object>`, y `GetSheets()` internamente solo llama `GetEnumerator()` (nunca `.Count`/`.Keys`/indexer). Se aprovecha con un `IDictionary<string, object>` "de mentira" cuyo único miembro real es el enumerador, alimentado por un `BlockingCollection<KeyValuePair<string, object>>` (una hoja a la vez, capacidad 1) — cada hoja es a su vez otro `BlockingCollection` de filas. Al llegar a `MaxRowsPerSheet` se cierra la cola de filas de la hoja actual y se agrega la siguiente hoja a la cola exterior. Memoria sigue acotada por las capacidades de las colas, no por el nº de hojas/filas.
+`NewSheet` is implemented in `XlsxExportWriter` without breaking streaming: MiniExcel decides on multi-sheet output if the `value` passed to `SaveAs` implements `IDictionary<string, object>`, and `GetSheets()` internally only calls `GetEnumerator()` (never `.Count`/`.Keys`/indexer). This is exploited with a "fake" `IDictionary<string, object>` whose only real member is the enumerator, fed by a `BlockingCollection<KeyValuePair<string, object>>` (one sheet at a time, capacity 1) — each sheet is in turn another `BlockingCollection` of rows. On reaching `MaxRowsPerSheet`, the current sheet's row queue is closed and the next sheet is added to the outer queue. Memory remains bounded by the queue capacities, not by the number of sheets/rows.
 
-## 7. Presión de memoria y verificación
+## 7. Memory pressure and verification
 
-- Configurar `<ServerGarbageCollection>true</ServerGarbageCollection>` para batch de alto throughput; evaluar `<ConcurrentGarbageCollection>`.
-- Prueba de humo obligatoria: exportar dataset sintético de **≥ 10M filas** y verificar que el working set se mantiene plano (ver [07](./07-testing-strategy.md) §4).
-- Métrica de aceptación: memoria estable e independiente del nº de filas.
+- Configure `<ServerGarbageCollection>true</ServerGarbageCollection>` for high-throughput batch jobs; evaluate `<ConcurrentGarbageCollection>`.
+- Mandatory smoke test: export a synthetic dataset of **≥ 10M rows** and verify the working set stays flat (see [07](./07-testing-strategy.md) §4).
+- Acceptance metric: memory stable and independent of the number of rows.
 
 ## 8. Backpressure
 
-El bombeo es síncrono respecto a la escritura: si el disco es más lento que la DB, el `while` se bloquea en `FlushAsync`/`WriteRow`, lo que naturalmente frena la lectura (el driver deja de pedir el siguiente lote). No se necesita cola intermedia. Si en el futuro se paraleliza lectura/escritura, usar un `Channel<T>` **acotado** (`BoundedChannelOptions` con capacidad fija) para preservar el backpressure.
+The pump is synchronous with respect to writing: if the disk is slower than the DB, the `while` loop blocks on `FlushAsync`/`WriteRow`, which naturally throttles reading (the driver stops requesting the next batch). No intermediate queue is needed. If reading/writing are parallelized in the future, use a **bounded** `Channel<T>` (`BoundedChannelOptions` with a fixed capacity) to preserve backpressure.

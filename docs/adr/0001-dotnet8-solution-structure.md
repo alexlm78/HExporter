@@ -1,25 +1,25 @@
-# ADR-0001 — .NET 10 y estructura de solución
+# ADR-0001 — .NET 10 and solution structure
 
-**Estado:** Aceptado · **Fecha:** 2026-07-13
-**Actualización:** El scaffold se generó sobre **.NET 10 (LTS)** — es el LTS vigente (nov-2025) y el único targeting pack disponible en el host (SDK 10.0.301). El diseño es idéntico para net8.0 si se requiere.
+**Status:** Accepted · **Date:** 2026-07-13
+**Update:** The scaffold was generated on **.NET 10 (LTS)** — it's the current LTS (Nov 2025) and the only targeting pack available on the host (SDK 10.0.301). The design is identical for net8.0 if needed.
 
-## Contexto
+## Context
 
-Se requiere una herramienta de exportación batch, cross-platform, con streaming eficiente y ciclo de soporte largo.
+A batch export tool is required: cross-platform, with efficient streaming and a long support cycle.
 
-## Decisión
+## Decision
 
 - **.NET 8 (LTS)**, C# 12, `Nullable=enable`.
-- Estructura por capas (clean architecture ligera): `Core` (puertos/modelos, sin dependencias) ← `Application` ← `Infrastructure`/`Export` ← `Cli`.
-- `Core` define interfaces (`IRecordReader`, `IExportWriter`); Oracle y los writers son adaptadores.
+- Layered structure (light clean architecture): `Core` (ports/models, no dependencies) ← `Application` ← `Infrastructure`/`Export` ← `Cli`.
+- `Core` defines interfaces (`IRecordReader`, `IExportWriter`); Oracle and the writers are adapters.
 
-## Consecuencias
+## Consequences
 
-- ✅ Testabilidad alta (puertos mockeables), extensible por formato sin tocar el núcleo.
-- ✅ Soporte LTS hasta nov-2026 (evaluar migración a .NET 10 LTS).
-- ➖ Algo de ceremonia de proyectos para un tool pequeño; se acepta por mantenibilidad.
+- ✅ High testability (mockable ports), extensible by format without touching the core.
+- ✅ LTS support until Nov 2026 (evaluate migration to .NET 10 LTS).
+- ➖ Some project ceremony for a small tool; accepted for maintainability.
 
-## Alternativas descartadas
+## Rejected alternatives
 
-- Proyecto único monolítico: más simple al inicio, peor separación y testabilidad.
-- .NET Framework 4.8: no cross-platform, sin mejoras de `Span`/async modernas.
+- Single monolithic project: simpler at first, worse separation and testability.
+- .NET Framework 4.8: not cross-platform, no modern `Span`/async improvements.

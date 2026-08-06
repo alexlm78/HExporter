@@ -1,11 +1,11 @@
-# 03 — Diseño Técnico Detallado
+# 03 — Detailed Technical Design
 
-## 1. Estructura de la solución
+## 1. Solution structure
 
 ```
 HExporter.sln
 ├─ src/
-│  ├─ HExporter.Core/            # Puertos, modelos, contratos. Sin dependencias externas.
+│  ├─ HExporter.Core/            # Ports, models, contracts. No external dependencies.
 │  │   ├─ Abstractions/
 │  │   │   ├─ IRecordReader.cs
 │  │   │   ├─ IExportWriter.cs
@@ -17,15 +17,15 @@ HExporter.sln
 │  │   │   ├─ ExportFormat.cs      # enum: Csv, Xlsx
 │  │   │   └─ ReportProfile.cs
 │  │   └─ Progress/IProgressSink.cs
-│  ├─ HExporter.Application/      # ExportService, validación, carga de perfiles
+│  ├─ HExporter.Application/      # ExportService, validation, profile loading
 │  │   ├─ ExportService.cs
 │  │   ├─ ReportProfileLoader.cs
 │  │   └─ Validation/ExportRequestValidator.cs
-│  ├─ HExporter.Infrastructure/   # Adaptador Oracle
+│  ├─ HExporter.Infrastructure/   # Oracle adapter
 │  │   ├─ Oracle/OracleRecordReader.cs
 │  │   ├─ Oracle/OracleConnectionFactory.cs
 │  │   └─ Oracle/OracleOptions.cs
-│  ├─ HExporter.Export/           # Writers CSV/XLSX
+│  ├─ HExporter.Export/           # CSV/XLSX writers
 │  │   ├─ Csv/CsvExportWriter.cs
 │  │   ├─ Csv/CsvOptions.cs
 │  │   ├─ Xlsx/XlsxExportWriter.cs
@@ -39,7 +39,7 @@ HExporter.sln
    └─ HExporter.IntegrationTests/   # Oracle via Testcontainers
 ```
 
-## 2. Contratos (puertos)
+## 2. Contracts (ports)
 
 ### 2.1 `ColumnSchema`
 
@@ -49,39 +49,39 @@ public sealed record ColumnSchema(int Ordinal, string Name, Type ClrType, string
 
 ### 2.2 `IRecordReader`
 
-Forward-only. Envuelve el `OracleDataReader` sin exponer detalles del driver.
+Forward-only. Wraps `OracleDataReader` without exposing driver details.
 
 ```csharp
 public interface IRecordReader : IAsyncDisposable
 {
     IReadOnlyList<ColumnSchema> Schema { get; }
 
-    /// Avanza a la siguiente fila. False cuando no hay más.
+    /// Advances to the next row. False when there are no more.
     ValueTask<bool> ReadAsync(CancellationToken ct);
 
-    /// Valor de la columna en la fila actual (boxed, o use GetValue para tipado).
+    /// Value of the column in the current row (boxed, or use GetValue for typed access).
     object? GetValue(int ordinal);
     bool IsDBNull(int ordinal);
 }
 ```
 
-> **Nota de rendimiento:** `GetValue` retorna `object?` (boxing). Para columnas numéricas de altísimo volumen se puede añadir accesores tipados (`GetInt64`, `GetDecimal`, `GetString`) que los writers usen para evitar boxing. Ver [04-streaming-strategy.md](./04-streaming-strategy.md) §5.
+> **Performance note:** `GetValue` returns `object?` (boxing). For extremely high-volume numeric columns, typed accessors can be added (`GetInt64`, `GetDecimal`, `GetString`) for writers to use and avoid boxing. See [04-streaming-strategy.md](./04-streaming-strategy.md) §5.
 
 ### 2.3 `IExportWriter`
 
 ```csharp
 public interface IExportWriter : IAsyncDisposable
 {
-    /// Escribe encabezados / inicializa la hoja. Recibe el schema del reader.
+    /// Writes headers / initializes the sheet. Receives the reader's schema.
     ValueTask BeginAsync(IReadOnlyList<ColumnSchema> schema, CancellationToken ct);
 
-    /// Escribe una fila leyendo del reader actual. No debe retener referencias.
+    /// Writes a row reading from the current reader. Must not retain references.
     void WriteRow(IRecordReader row);
 
-    /// Fuerza el vaciado del buffer al stream subyacente.
+    /// Forces the buffer to flush to the underlying stream.
     ValueTask FlushAsync(CancellationToken ct);
 
-    /// Cierra estructuras del formato (footer XLSX, flush final).
+    /// Closes format-specific structures (XLSX footer, final flush).
     ValueTask EndAsync(CancellationToken ct);
 }
 ```
@@ -95,13 +95,13 @@ public interface IExportWriterFactory
 }
 ```
 
-## 3. Modelos de aplicación
+## 3. Application models
 
 ```csharp
 public enum ExportFormat { Csv, Xlsx }
 
 public sealed record ExportRequest(
-    string Sql,                                   // o nombre de tabla resuelto a SELECT *
+    string Sql,                                   // or table name resolved to SELECT *
     IReadOnlyDictionary<string, object?> Binds,   // bind variables
     ExportFormat Format,
     string DestinationPath,
@@ -110,17 +110,17 @@ public sealed record ExportRequest(
 public sealed record ExportResult(long RowCount, long BytesWritten, TimeSpan Elapsed);
 ```
 
-`ExportOptions` agrupa `CsvOptions` y `XlsxOptions` + comunes (encoding, `IncludeHeaders`, `FlushEveryRows`, `DateFormat`, `NumberFormat`, `CultureName`).
+`ExportOptions` groups `CsvOptions` and `XlsxOptions` plus common settings (encoding, `IncludeHeaders`, `FlushEveryRows`, `DateFormat`, `NumberFormat`, `CultureName`).
 
-## 4. `OracleRecordReader` (núcleo de lectura)
+## 4. `OracleRecordReader` (read core)
 
-Responsabilidades:
-1. Crear conexión con `OracleConnectionFactory` (pooling on).
-2. Crear `OracleCommand`, asignar `FetchSize` (bytes) — clave para el streaming (ver §04).
-3. Ejecutar `ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct)`.
-4. Proyectar `GetColumnSchema()` a `IReadOnlyList<ColumnSchema>`.
+Responsibilities:
+1. Create a connection with `OracleConnectionFactory` (pooling on).
+2. Create the `OracleCommand`, set `FetchSize` (bytes) — key for streaming (see §04).
+3. Execute `ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct)`.
+4. Project `GetColumnSchema()` into `IReadOnlyList<ColumnSchema>`.
 
-Esbozo:
+Sketch:
 
 ```csharp
 public sealed class OracleRecordReader : IRecordReader
@@ -140,8 +140,8 @@ public sealed class OracleRecordReader : IRecordReader
         var conn = await factory.OpenAsync(ct);
         var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
-        cmd.FetchSize = opt.FetchSizeBytes;      // p.ej. 1 MB. NO es todo el resultado.
-        cmd.InitialLOBFetchSize = -1;            // stream de LOBs si aplica
+        cmd.FetchSize = opt.FetchSizeBytes;      // e.g. 1 MB. NOT the whole result.
+        cmd.InitialLOBFetchSize = -1;            // stream LOBs if applicable
         foreach (var (k, v) in binds)
             cmd.Parameters.Add(new OracleParameter(k, v ?? DBNull.Value));
         cmd.BindByName = true;
@@ -158,27 +158,27 @@ public sealed class OracleRecordReader : IRecordReader
     {
         await _reader.DisposeAsync();
         await _cmd.DisposeAsync();
-        await _conn.DisposeAsync();   // devuelve al pool
+        await _conn.DisposeAsync();   // returns to the pool
     }
 }
 ```
 
 ## 5. `CsvExportWriter`
 
-- Envuelve el `Stream` destino en un `StreamWriter` con `bufferSize` configurable y encoding (UTF-8 con/sin BOM).
-- Encabezados en `BeginAsync`.
-- `WriteRow` recorre las columnas, aplica quoting RFC 4180 (comillas si el valor contiene delimitador, comilla o salto de línea; escapa `"` → `""`).
-- Formatea fechas/números con `CultureInfo` fijo (evita sorpresas de locale).
+- Wraps the destination `Stream` in a `StreamWriter` with configurable `bufferSize` and encoding (UTF-8 with/without BOM).
+- Headers in `BeginAsync`.
+- `WriteRow` iterates over the columns, applies RFC 4180 quoting (quotes if the value contains the delimiter, a quote character, or a line break; escapes `"` → `""`).
+- Formats dates/numbers with a fixed `CultureInfo` (avoids locale surprises).
 - `FlushAsync` → `StreamWriter.FlushAsync`.
 
 ## 6. `XlsxExportWriter` (MiniExcel)
 
-MiniExcel escribe XLSX en modo streaming aceptando un `IDataReader`/`IEnumerable`. Dos enfoques:
+MiniExcel writes XLSX in streaming mode, accepting an `IDataReader`/`IEnumerable`. Two approaches:
 
-- **A (recomendado):** adaptar `IRecordReader` → `IDataReader` y pasar a `MiniExcel.SaveAsByIdataReader`/`SaveAs`, que escribe fila a fila al `Stream` sin construir el árbol OpenXML completo.
-- **B (control fino):** exponer un `IEnumerable<IDictionary<string,object>>` perezoso (`yield return` por fila) hacia `MiniExcel.SaveAs`. La pereza del `IEnumerable` preserva el streaming.
+- **A (recommended):** adapt `IRecordReader` → `IDataReader` and pass it to `MiniExcel.SaveAsByIdataReader`/`SaveAs`, which writes row by row to the `Stream` without building the full OpenXML tree.
+- **B (fine control):** expose a lazy `IEnumerable<IDictionary<string,object>>` (`yield return` per row) to `MiniExcel.SaveAs`. The `IEnumerable`'s laziness preserves streaming.
 
-Restricción de formato: XLSX tiene un límite de **1,048,576 filas por hoja**. Para resultados mayores → política de particionado por hoja/archivo (ver ADR-0005 y [04](./04-streaming-strategy.md) §6).
+Format constraint: XLSX has a limit of **1,048,576 rows per sheet**. For larger results → sheet/file partitioning policy (see ADR-0005 and [04](./04-streaming-strategy.md) §6).
 
 ## 7. `ExportService`
 
@@ -209,21 +209,21 @@ public async Task<ExportResult> ExecuteAsync(ExportRequest req, CancellationToke
     }
     catch (OperationCanceledException)
     {
-        await _fs.DeletePartialAsync(req.DestinationPath);   // política de limpieza
+        await _fs.DeletePartialAsync(req.DestinationPath);   // cleanup policy
         throw;
     }
     return new ExportResult(n, dest.Length, sw.Elapsed);
 }
 ```
 
-## 8. Dependencias NuGet
+## 8. NuGet dependencies
 
-| Paquete | Uso |
+| Package | Use |
 |---------|-----|
-| `Oracle.ManagedDataAccess.Core` | Driver Oracle managed |
-| `MiniExcel` | XLSX streaming |
+| `Oracle.ManagedDataAccess.Core` | Managed Oracle driver |
+| `MiniExcel` | Streaming XLSX |
 | `System.CommandLine` | CLI |
-| `Serilog` + `Serilog.Sinks.Console` / `.File` | Logging estructurado |
+| `Serilog` + `Serilog.Sinks.Console` / `.File` | Structured logging |
 | `Microsoft.Extensions.Hosting` | Host, DI, config |
-| `FluentValidation` (opcional) | Validación de requests/perfiles |
-| `xUnit`, `FluentAssertions`, `Testcontainers.Oracle` | Pruebas |
+| `FluentValidation` (optional) | Request/profile validation |
+| `xUnit`, `FluentAssertions`, `Testcontainers.Oracle` | Testing |
