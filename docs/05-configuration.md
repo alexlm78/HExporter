@@ -4,11 +4,20 @@
 
 ```json
 {
+  "Database": {
+    "Engine": "Oracle"
+  },
   "Oracle": {
     "ConnectionStringName": "Reporting",
     "FetchSizeBytes": 1048576,
     "CommandTimeoutSeconds": 0,
     "BindByName": true,
+    "ConnectRetryAttempts": 3,
+    "ConnectRetryBaseDelaySeconds": 2.0
+  },
+  "Postgres": {
+    "ConnectionString": "",
+    "CommandTimeoutSeconds": 0,
     "ConnectRetryAttempts": 3,
     "ConnectRetryBaseDelaySeconds": 2.0
   },
@@ -40,7 +49,11 @@
 }
 ```
 
-`Oracle.ConnectRetryAttempts` (Polly): retries with exponential backoff on a transient failure while **opening** the connection (listener down, network). `0` = disabled. Does not retry on cancellation (Ctrl+C) or configuration errors (empty connection string).
+`Oracle.ConnectRetryAttempts` / `Postgres.ConnectRetryAttempts` (Polly): retries with exponential backoff on a transient failure while **opening** the connection (listener down, network). `0` = disabled. Does not retry on cancellation (Ctrl+C) or configuration errors (empty connection string).
+
+### 1.1 Database engine selection
+
+`Database:Engine` selects the active adapter: `Oracle` (default) or `Postgres`. Only one `IRecordReaderFactory` is wired per run — resolved once at startup, before the DI container is built. Precedence (highest wins): `--db-engine` CLI flag > real process env var (`HEXPORTER_Database__Engine`) > `[dot]env` file > `appsettings.json`. An unrecognized value throws immediately (exit code 1) listing the valid options. When `Postgres` is selected, `Oracle:*` settings are simply unused (and vice versa) — no cross-validation between sections.
 
 ## 2. Secrets / credentials
 
@@ -89,8 +102,9 @@ Options:
   --encoding <name>        utf-8 | utf-8-bom | latin1. (default: utf-8)
   --flush-every <n>        Rows between flushes. (default: 10000)
   --fetch-size <bytes>     Oracle driver FetchSize. (default: 1048576)
-  --sheet <name>           XLSX sheet name. (default: Datos)
+  --sheet <name>           XLSX sheet name. (default: Data)
   --env-file <path>        Alternate [dot]env file (default: [dot]env in current directory, optional).
+  --db-engine <name>       oracle | postgres. (default: oracle; see §1.1)
   -v, --verbose            Verbose logging.
 
 Exit codes:

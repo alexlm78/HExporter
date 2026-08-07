@@ -1,8 +1,8 @@
+using HExporter.Infrastructure.Common;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Oracle.ManagedDataAccess.Client;
 using Polly;
-using Polly.Retry;
 
 namespace HExporter.Infrastructure.Oracle;
 
@@ -14,7 +14,8 @@ public sealed class OracleConnectionFactory
     public OracleConnectionFactory(IOptions<OracleOptions> options, ILogger<OracleConnectionFactory> logger)
     {
         _options = options.Value;
-        _retryPipeline = BuildRetryPipeline(_options, logger);
+        _retryPipeline = ConnectionRetryPolicyFactory.Build<OracleException>(
+            _options.ConnectRetryAttempts, _options.ConnectRetryBaseDelaySeconds, logger, "Oracle");
     }
 
     public OracleOptions Options => _options;
@@ -31,31 +32,5 @@ public sealed class OracleConnectionFactory
             await conn.OpenAsync(token);
             return conn;
         }, ct);
-    }
-
-    // Reintentos ante fallo transitorio (listener caído, red, etc.) al abrir la conexión.
-    // No reintenta OperationCanceledException (cancelación explícita) ni errores de config.
-    private static ResiliencePipeline BuildRetryPipeline(OracleOptions options, ILogger logger)
-    {
-        if (options.ConnectRetryAttempts <= 0)
-            return ResiliencePipeline.Empty;
-
-        return new ResiliencePipelineBuilder()
-            .AddRetry(new RetryStrategyOptions
-            {
-                ShouldHandle = new PredicateBuilder().Handle<OracleException>(),
-                MaxRetryAttempts = options.ConnectRetryAttempts,
-                BackoffType = DelayBackoffType.Exponential,
-                Delay = TimeSpan.FromSeconds(options.ConnectRetryBaseDelaySeconds),
-                OnRetry = args =>
-                {
-                    logger.LogWarning(
-                        args.Outcome.Exception,
-                        "Retrying Oracle connection (attempt {Attempt}/{Max}) after {Delay}",
-                        args.AttemptNumber + 1, options.ConnectRetryAttempts, args.RetryDelay);
-                    return default;
-                }
-            })
-            .Build();
     }
 }

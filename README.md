@@ -1,18 +1,17 @@
 # HExporter
 
-Large-volume report exporter from **Oracle** to **CSV** or **XLSX**, writing **directly from the database to the file via streaming**, without loading the result into memory.
+Large-volume report exporter from **Oracle** or **PostgreSQL** to **CSV** or **XLSX**, writing **directly from the database to the file via streaming**, without loading the result into memory.
 
 Designed for reports with millions of rows with **constant and bounded** memory usage, independent of the result size — prevents the machine from freezing or crashing due to memory pressure (OOM / GC pauses).
 
 ## Why
 
-Generating reports by loading the entire result into memory (`DataTable`, lists, or Excel libraries that build the whole workbook in RAM) makes RAM grow with the report size → `OutOfMemoryException` and freezes with high volumes. HExporter streams **one row at a time** from the Oracle cursor to the file, with O(1) memory relative to the number of rows.
+Generating reports by loading the entire result into memory (`DataTable`, lists, or Excel libraries that build the whole workbook in RAM) makes RAM grow with the report size → `OutOfMemoryException` and freezes with high volumes. HExporter streams **one row at a time** from the database cursor to the file, with O(1) memory relative to the number of rows.
 
 ## How it works
 
 ```
-Oracle (server-side cursor)
-  → FetchSize (bounded network batch)
+Oracle / PostgreSQL (server-side cursor, bounded network batch)
   → 1 live row in the process
   → writer with buffer + periodic flush
   → file (CSV / XLSX)
@@ -35,13 +34,14 @@ Memory **does not grow** with the number of rows. To reproduce: see [MemProbe](#
 
 - **.NET 10** (LTS), C#
 - `Oracle.ManagedDataAccess.Core` — 100% managed driver, no native client (cross-platform)
+- `Npgsql` — 100% managed PostgreSQL driver
 - `MiniExcel` — streaming XLSX
 - `System.CommandLine` — CLI · `Serilog` — logging · `Microsoft.Extensions.Hosting` — DI/config
 
 ## Requirements
 
 - .NET 10 SDK
-- Access to an Oracle database (account with `SELECT` on the objects to export)
+- Access to an Oracle or PostgreSQL database (account with `SELECT` on the objects to export)
 
 ## Build and test
 
@@ -89,6 +89,7 @@ dotnet run --project src/HExporter.Cli -- --help
 | `--sheet <name>` | XLSX sheet name (default `Data`). |
 | `--flush-every <n>` | Rows between flushes (default `10000`). |
 | `--env-file <path>` | Path to an alternate `.env` file (default: `.env` in the current directory). |
+| `--db-engine oracle\|postgres` | Database engine. Overrides `HEXPORTER_Database__Engine` / `appsettings.json` (default `oracle`). |
 
 One of `--sql`, `--sql-file`, `--table`, or `--profile` is required. Full reference: [`docs/05-configuration.md`](./docs/05-configuration.md).
 
@@ -99,6 +100,18 @@ Connection string and options via `appsettings.json` or environment variables. *
 ```bash
 export HEXPORTER_Oracle__ConnectionString="User Id=rpt;Password=***;Data Source=..."
 ```
+
+### Database engine
+
+Default is **Oracle**. Select PostgreSQL via `--db-engine postgres`, `HEXPORTER_Database__Engine=postgres` (env var or `.env`), or `Database:Engine` in `appsettings.json` — precedence: CLI > real env var > `.env` > `appsettings.json`.
+
+```bash
+export HEXPORTER_Database__Engine=postgres
+export HEXPORTER_Postgres__ConnectionString="Host=host;Port=5432;Username=rpt;Password=***;Database=reporting"
+hexporter --table public.orders --format csv --out orders.csv
+```
+
+An unrecognized `--db-engine` value fails fast with exit code 1 and the list of valid values (`oracle`, `postgres`).
 
 ## Report profile (`report.json`)
 
@@ -128,7 +141,7 @@ For the real Oracle path: seed with [`scripts/seed_10m.sql`](./scripts/seed_10m.
 src/
   HExporter.Core            ports + models (no dependencies)
   HExporter.Application     ExportService (orchestration), validation, profiles
-  HExporter.Infrastructure  Oracle adapter (streaming reader)
+  HExporter.Infrastructure  Oracle / PostgreSQL adapters (streaming reader)
   HExporter.Export          CSV / XLSX writers
   HExporter.Cli             CLI (hexporter)
 tools/HExporter.MemProbe    memory / volume test

@@ -24,9 +24,10 @@ var noHeadersOpt = new Option<bool>("--no-headers") { Description = "Omit header
 var sheetOpt = new Option<string>("--sheet") { Description = "XLSX sheet name.", DefaultValueFactory = _ => "Data" };
 var flushOpt = new Option<int>("--flush-every") { Description = "Rows between flushes.", DefaultValueFactory = _ => 10_000 };
 var envFileOpt = new Option<string?>("--env-file") { Description = "Path to an alternate .env file (default: .env in the current directory)." };
+var dbEngineOpt = new Option<string?>("--db-engine") { Description = "oracle | postgres. Overrides HEXPORTER_Database__Engine / appsettings.json (default: oracle)." };
 
-var root = new RootCommand("HExporter — streams Oracle tables/queries to CSV/XLSX.");
-foreach (var o in new Option[] { sqlOpt, sqlFileOpt, tableOpt, profileOpt, formatOpt, outOpt, bindOpt, delimiterOpt, noHeadersOpt, sheetOpt, flushOpt, envFileOpt })
+var root = new RootCommand("HExporter — streams Oracle/PostgreSQL tables/queries to CSV/XLSX.");
+foreach (var o in new Option[] { sqlOpt, sqlFileOpt, tableOpt, profileOpt, formatOpt, outOpt, bindOpt, delimiterOpt, noHeadersOpt, sheetOpt, flushOpt, envFileOpt, dbEngineOpt })
     root.Options.Add(o);
 
 if (args.Length == 0) args = ["--help"];
@@ -35,7 +36,7 @@ root.SetAction(async (parse, ct) =>
 {
     try
     {
-        var host = BuildHost(parse.GetValue(envFileOpt));
+        var host = BuildHost(parse.GetValue(envFileOpt), parse.GetValue(dbEngineOpt));
         var loader = host.Services.GetRequiredService<ReportProfileLoader>();
         var exporter = host.Services.GetRequiredService<ExportService>();
 
@@ -124,7 +125,7 @@ root.SetAction(async (parse, ct) =>
 return await root.Parse(args).InvokeAsync();
 
 // ---- Helpers ----
-static IHost BuildHost(string? envFilePath)
+static IHost BuildHost(string? envFilePath, string? dbEngineOverride)
 {
     // Precedence (lowest to highest): appsettings.json < .env < real env vars < CLI.
     // DotNetEnv does not overwrite variables already present in the process: if HEXPORTER_... already exists, it wins.
@@ -139,7 +140,9 @@ static IHost BuildHost(string? envFilePath)
     builder.Logging.ClearProviders();
     builder.Logging.AddSerilog(Log.Logger);
 
-    builder.Services.AddHExporterOracle(builder.Configuration);
+    var engine = DatabaseEngineResolver.Resolve(
+        dbEngineOverride, builder.Configuration[DatabaseEngineResolver.ConfigKey]);
+    builder.Services.AddHExporterDatabase(builder.Configuration, engine);
     builder.Services.AddHExporterWriters();
     builder.Services.AddHExporterApplication(builder.Configuration);
     return builder.Build();

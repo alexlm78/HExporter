@@ -2,9 +2,9 @@
 
 ## 1. Principles
 
-1. **Streaming first.** Data flows row by row from Oracle to the file. The full set is never materialized.
+1. **Streaming first.** Data flows row by row from the source database (Oracle or PostgreSQL) to the file. The full set is never materialized.
 2. **Bounded memory.** RAM usage depends on row width and buffer size, not on the number of rows.
-3. **Separation of concerns.** Reading (Oracle), formatting (CSV/XLSX), and orchestration are independent and testable.
+3. **Separation of concerns.** Reading (Oracle/PostgreSQL), formatting (CSV/XLSX), and orchestration are independent and testable.
 4. **Extensible by format.** Adding a new format = implement an interface, without touching the rest.
 5. **Fail-safe.** Cooperative cancellation, resource limits, and cleanup of partial files.
 
@@ -21,11 +21,12 @@
 |                            IRecordReader, IExportWriter)      |
 +-------------------------------------------------------------+
 |  HExporter.Infrastructure (OracleRecordReader,               |  Infrastructure
-|   + HExporter.Export       CsvExportWriter, XlsxExportWriter) |
+|   + HExporter.Export       PostgresRecordReader,              |
+|                             CsvExportWriter, XlsxExportWriter) |
 +-------------------------------------------------------------+
 ```
 
-Dependency rule: outer layers depend on inner ones. `Core` depends on nothing (it defines the ports/interfaces). Oracle and the writers are **adapters** that implement those ports.
+Dependency rule: outer layers depend on inner ones. `Core` depends on nothing (it defines the ports/interfaces). Oracle, PostgreSQL, and the writers are **adapters** that implement those ports. Only one `IRecordReader` implementation is wired per run, selected by `Database:Engine` ([ADR-0006](./adr/0006-postgresql-engine-support.md)).
 
 ## 3. Components
 
@@ -33,6 +34,7 @@ Dependency rule: outer layers depend on inner ones. `Core` depends on nothing (i
 |------------|-----------------|
 | `IRecordReader` | Forward-only read port. Exposes column metadata + row-by-row iteration. |
 | `OracleRecordReader` | Oracle adapter: opens the connection, executes the command with `CommandBehavior.SequentialAccess`, tunes `FetchSize`, wraps `OracleDataReader`. |
+| `PostgresRecordReader` | PostgreSQL adapter: opens the connection, executes the command with `CommandBehavior.SequentialAccess`, wraps `NpgsqlDataReader` (Npgsql streams row-by-row natively). |
 | `IExportWriter` | Write port. Receives the schema and consumes rows incrementally. |
 | `CsvExportWriter` | Writes CSV row by row with `StreamWriter` + buffer; handles quoting/escaping. |
 | `XlsxExportWriter` | Writes XLSX in streaming mode with `MiniExcel` (does not build the workbook in RAM). |

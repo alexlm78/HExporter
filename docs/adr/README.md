@@ -9,3 +9,4 @@ Record of significant architecture decisions. Format: context → decision → c
 | [0003](./0003-xlsx-miniexcel.md) | MiniExcel for streaming XLSX | Accepted |
 | [0004](./0004-csv-manual-writer.md) | Manual CSV writing vs. CsvHelper | Accepted |
 | [0005](./0005-partitioning-strategy.md) | Partitioning strategy for massive volumes | Deferred (v2) |
+| [0006](./0006-postgresql-engine-support.md) | Multi-engine support: PostgreSQL alongside Oracle | Accepted |
