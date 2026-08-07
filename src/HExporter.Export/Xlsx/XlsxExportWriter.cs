@@ -72,15 +72,15 @@ public sealed class XlsxExportWriter : IExportWriter
 
     public void WriteRow(IRecordReader row)
     {
-        if (_failure is not null) throw new InvalidOperationException("Fallo del writer XLSX.", _failure);
+        if (_failure is not null) throw new InvalidOperationException("XLSX writer failure.", _failure);
 
         if (_rowsInCurrentSheet >= MaxRowsPerSheetOverride)
         {
             if (_xlsx.RowLimitStrategy == XlsxRowLimitStrategy.Fail)
             {
                 throw new InvalidOperationException(
-                    $"El resultado supera el límite de {XlsxOptions.MaxRowsPerSheet:N0} filas por hoja XLSX. " +
-                    "Use CSV o configure RowLimitStrategy=NewSheet. Ver docs/04-streaming-strategy.md §6.");
+                    $"The result exceeds the {XlsxOptions.MaxRowsPerSheet:N0} row-per-XLSX-sheet limit. " +
+                    "Use CSV or set RowLimitStrategy=NewSheet. See docs/04-streaming-strategy.md §6.");
             }
 
             RollToNextSheet();
@@ -112,7 +112,7 @@ public sealed class XlsxExportWriter : IExportWriter
         _sheets.CompleteAdding();
         if (_consumer is not null) await _consumer;
         if (_failure is not null)
-            throw new InvalidOperationException("Fallo al escribir XLSX.", _failure);
+            throw new InvalidOperationException("Failed to write XLSX.", _failure);
     }
 
     public async ValueTask DisposeAsync()

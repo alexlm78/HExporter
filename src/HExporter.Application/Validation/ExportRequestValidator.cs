@@ -13,13 +13,13 @@ public sealed partial class ExportRequestValidator(IOptions<ExportSecurityOption
     public void Validate(ExportRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Sql))
-            throw new ArgumentException("La consulta SQL es obligatoria.");
+            throw new ArgumentException("The SQL query is required.");
         if (string.IsNullOrWhiteSpace(request.DestinationPath))
-            throw new ArgumentException("La ruta de destino es obligatoria.");
+            throw new ArgumentException("The destination path is required.");
         if (request.Format == ExportFormat.Xlsx && request.DestinationPath == "-")
-            throw new ArgumentException("XLSX no soporta salida a stdout ('-'). Use CSV.");
+            throw new ArgumentException("XLSX does not support stdout output ('-'). Use CSV.");
         if (request.DestinationPath.Contains('\0'))
-            throw new ArgumentException("Ruta de destino inválida.");
+            throw new ArgumentException("Invalid destination path.");
 
         ValidateOutputBoundary(request.DestinationPath);
     }
@@ -37,7 +37,7 @@ public sealed partial class ExportRequestValidator(IOptions<ExportSecurityOption
         string baseDirWithSep = baseDir.EndsWith(Path.DirectorySeparatorChar) ? baseDir : baseDir + Path.DirectorySeparatorChar;
 
         if (fullPath != baseDir && !fullPath.StartsWith(baseDirWithSep, StringComparison.Ordinal))
-            throw new ArgumentException($"La ruta de destino debe estar dentro de {allowedDir}.");
+            throw new ArgumentException($"The destination path must be inside {allowedDir}.");
     }
 
     /// <summary>Valida un identificador de tabla/vista antes de construir SELECT *.</summary>

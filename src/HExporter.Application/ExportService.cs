@@ -43,7 +43,7 @@ public sealed class ExportService
         long rows = 0;
         long bytes = 0;
 
-        _logger.LogInformation("Export {ExportId} iniciada. Formato={Format} Destino={Dest}",
+        _logger.LogInformation("Export {ExportId} started. Format={Format} Destination={Dest}",
             exportId, request.Format, finalPath);
 
         Stream destination = toStdout
@@ -76,9 +76,9 @@ public sealed class ExportService
             await destination.DisposeAsync();
             if (!toStdout) TryDeletePartial(writePath);
             if (ex is OperationCanceledException)
-                _logger.LogWarning("Export {ExportId} cancelada tras {Rows} filas.", exportId, rows);
+                _logger.LogWarning("Export {ExportId} cancelled after {Rows} rows.", exportId, rows);
             else
-                _logger.LogError(ex, "Export {ExportId} falló tras {Rows} filas.", exportId, rows);
+                _logger.LogError(ex, "Export {ExportId} failed after {Rows} rows.", exportId, rows);
             throw;
         }
 
@@ -86,14 +86,14 @@ public sealed class ExportService
 
         if (!toStdout)
         {
-            File.Move(writePath, finalPath, overwrite: true); // rename atómico
+            File.Move(writePath, finalPath, overwrite: true); // atomic rename
             bytes = new FileInfo(finalPath).Length;
         }
 
         sw.Stop();
         var result = new ExportResult(rows, bytes, sw.Elapsed);
         _logger.LogInformation(
-            "Export {ExportId} completada. Filas={Rows} Bytes={Bytes} Duración={Elapsed} ({Rps:N0} filas/s)",
+            "Export {ExportId} completed. Rows={Rows} Bytes={Bytes} Duration={Elapsed} ({Rps:N0} rows/s)",
             exportId, result.RowCount, result.BytesWritten, result.Elapsed, result.RowsPerSecond);
         return result;
     }
@@ -101,6 +101,6 @@ public sealed class ExportService
     private void TryDeletePartial(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); }
-        catch (Exception ex) { _logger.LogWarning(ex, "No se pudo borrar el parcial {Path}", path); }
+        catch (Exception ex) { _logger.LogWarning(ex, "Could not delete partial file {Path}", path); }
     }
 }

@@ -23,7 +23,7 @@ public sealed class OracleConnectionFactory
     {
         if (string.IsNullOrWhiteSpace(_options.ConnectionString))
             throw new InvalidOperationException(
-                "Oracle:ConnectionString no configurado. Ver docs/05-configuration.md §2.");
+                "Oracle:ConnectionString not configured. See docs/05-configuration.md §2.");
 
         return await _retryPipeline.ExecuteAsync(async token =>
         {
@@ -51,7 +51,7 @@ public sealed class OracleConnectionFactory
                 {
                     logger.LogWarning(
                         args.Outcome.Exception,
-                        "Reintentando conexión Oracle (intento {Attempt}/{Max}) tras {Delay}",
+                        "Retrying Oracle connection (attempt {Attempt}/{Max}) after {Delay}",
                         args.AttemptNumber + 1, options.ConnectRetryAttempts, args.RetryDelay);
                     return default;
                 }

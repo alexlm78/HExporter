@@ -11,23 +11,25 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using DotNetEnv;
 
-// ---- Opciones CLI ----
-var sqlOpt = new Option<string?>("--sql") { Description = "Consulta SELECT a exportar." };
-var sqlFileOpt = new Option<string?>("--sql-file") { Description = "Ruta a un archivo .sql con la consulta a exportar." };
-var tableOpt = new Option<string?>("--table") { Description = "Tabla/vista a exportar (SELECT *)." };
-var profileOpt = new Option<string?>("--profile") { Description = "Ruta a un report.json." };
+// ---- CLI options ----
+var sqlOpt = new Option<string?>("--sql") { Description = "SELECT query to export." };
+var sqlFileOpt = new Option<string?>("--sql-file") { Description = "Path to a .sql file with the query to export." };
+var tableOpt = new Option<string?>("--table") { Description = "Table/view to export (SELECT *)." };
+var profileOpt = new Option<string?>("--profile") { Description = "Path to a report.json." };
 var formatOpt = new Option<ExportFormat>("--format") { Description = "csv | xlsx.", DefaultValueFactory = _ => ExportFormat.Csv };
-var outOpt = new Option<string?>("--out") { Description = "Archivo destino ('-' = stdout, solo csv)." };
-var bindOpt = new Option<string[]>("--bind") { Description = "Bind variable k=v (repetible).", AllowMultipleArgumentsPerToken = true };
-var delimiterOpt = new Option<string>("--delimiter") { Description = "Delimitador CSV.", DefaultValueFactory = _ => "," };
-var noHeadersOpt = new Option<bool>("--no-headers") { Description = "Omite encabezados." };
-var sheetOpt = new Option<string>("--sheet") { Description = "Nombre de hoja XLSX.", DefaultValueFactory = _ => "Datos" };
-var flushOpt = new Option<int>("--flush-every") { Description = "Filas entre flushes.", DefaultValueFactory = _ => 10_000 };
-var envFileOpt = new Option<string?>("--env-file") { Description = "Ruta a un archivo .env alternativo (def. .env en el directorio actual)." };
+var outOpt = new Option<string?>("--out") { Description = "Destination file ('-' = stdout, CSV only)." };
+var bindOpt = new Option<string[]>("--bind") { Description = "Bind variable k=v (repeatable).", AllowMultipleArgumentsPerToken = true };
+var delimiterOpt = new Option<string>("--delimiter") { Description = "CSV delimiter.", DefaultValueFactory = _ => "," };
+var noHeadersOpt = new Option<bool>("--no-headers") { Description = "Omit headers." };
+var sheetOpt = new Option<string>("--sheet") { Description = "XLSX sheet name.", DefaultValueFactory = _ => "Data" };
+var flushOpt = new Option<int>("--flush-every") { Description = "Rows between flushes.", DefaultValueFactory = _ => 10_000 };
+var envFileOpt = new Option<string?>("--env-file") { Description = "Path to an alternate .env file (default: .env in the current directory)." };
 
-var root = new RootCommand("HExporter — exporta tablas/consultas Oracle a CSV/XLSX por streaming.");
+var root = new RootCommand("HExporter — streams Oracle tables/queries to CSV/XLSX.");
 foreach (var o in new Option[] { sqlOpt, sqlFileOpt, tableOpt, profileOpt, formatOpt, outOpt, bindOpt, delimiterOpt, noHeadersOpt, sheetOpt, flushOpt, envFileOpt })
     root.Options.Add(o);
+
+if (args.Length == 0) args = ["--help"];
 
 root.SetAction(async (parse, ct) =>
 {
@@ -44,7 +46,7 @@ root.SetAction(async (parse, ct) =>
         var format = parse.GetValue(formatOpt);
         var binds = ParseBinds(parse.GetValue(bindOpt) ?? Array.Empty<string>());
 
-        // Resolver origen -> SQL final
+        // Resolve source -> final SQL
         if (profilePath is not null)
         {
             var profile = await loader.LoadAsync(profilePath, ct);
@@ -57,7 +59,7 @@ root.SetAction(async (parse, ct) =>
         {
             if (!HExporter.Application.Validation.ExportRequestValidator.IsValidTableName(table))
             {
-                Console.Error.WriteLine($"Nombre de tabla inválido: {table}");
+                Console.Error.WriteLine($"Invalid table name: {table}");
                 return 1;
             }
             sql = $"SELECT * FROM {table}";
@@ -66,12 +68,12 @@ root.SetAction(async (parse, ct) =>
         {
             if (sql is not null)
             {
-                Console.Error.WriteLine("Use --sql o --sql-file, no ambos.");
+                Console.Error.WriteLine("Use --sql or --sql-file, not both.");
                 return 1;
             }
             if (!File.Exists(sqlFile))
             {
-                Console.Error.WriteLine($"Archivo --sql-file no encontrado: {sqlFile}");
+                Console.Error.WriteLine($"--sql-file file not found: {sqlFile}");
                 return 1;
             }
             sql = await File.ReadAllTextAsync(sqlFile, ct);
@@ -79,7 +81,7 @@ root.SetAction(async (parse, ct) =>
 
         if (string.IsNullOrWhiteSpace(sql))
         {
-            Console.Error.WriteLine("Indique --sql, --sql-file, --table o --profile.");
+            Console.Error.WriteLine("Specify --sql, --sql-file, --table, or --profile.");
             return 1;
         }
 
@@ -90,7 +92,7 @@ root.SetAction(async (parse, ct) =>
             IncludeHeaders = !parse.GetValue(noHeadersOpt),
             FlushEveryRows = parse.GetValue(flushOpt),
             Csv = new CsvOptions { Delimiter = parse.GetValue(delimiterOpt) ?? "," },
-            Xlsx = new XlsxOptions { SheetName = parse.GetValue(sheetOpt) ?? "Datos" }
+            Xlsx = new XlsxOptions { SheetName = parse.GetValue(sheetOpt) ?? "Data" }
         };
 
         var request = new ExportRequest(sql!, binds, format, outPath, options);
@@ -100,12 +102,12 @@ root.SetAction(async (parse, ct) =>
 
         var result = await exporter.ExecuteAsync(request, new ConsoleProgressSink(), cts.Token);
         Console.Error.WriteLine();
-        Console.Error.WriteLine($"OK: {result.RowCount:N0} filas, {result.BytesWritten:N0} bytes, {result.Elapsed}.");
+        Console.Error.WriteLine($"OK: {result.RowCount:N0} rows, {result.BytesWritten:N0} bytes, {result.Elapsed}.");
         return 0;
     }
     catch (OperationCanceledException)
     {
-        Console.Error.WriteLine("\nCancelado.");
+        Console.Error.WriteLine("\nCancelled.");
         return 130;
     }
     catch (Exception ex)
@@ -124,8 +126,8 @@ return await root.Parse(args).InvokeAsync();
 // ---- Helpers ----
 static IHost BuildHost(string? envFilePath)
 {
-    // Precedencia (menor a mayor): appsettings.json < .env < variables de entorno reales < CLI.
-    // DotNetEnv no sobreescribe variables ya presentes en el proceso: si ya existe HEXPORTER_..., gana esa.
+    // Precedence (lowest to highest): appsettings.json < .env < real env vars < CLI.
+    // DotNetEnv does not overwrite variables already present in the process: if HEXPORTER_... already exists, it wins.
     LoadDotEnv(envFilePath);
 
     var builder = Host.CreateApplicationBuilder();
@@ -149,10 +151,10 @@ static void LoadDotEnv(string? envFilePath)
     if (!File.Exists(path))
     {
         if (envFilePath is not null)
-            throw new FileNotFoundException($"Archivo .env no encontrado: {envFilePath}");
-        return; // .env es opcional por defecto — configuración puede venir solo de env vars reales.
+            throw new FileNotFoundException($".env file not found: {envFilePath}");
+        return; // .env is optional by default — configuration can come solely from real env vars.
     }
-    Env.Load(path); // no sobreescribe variables ya presentes en el proceso
+    Env.Load(path); // does not overwrite variables already present in the process
 }
 
 static Dictionary<string, object?> ParseBinds(string[] pairs)
@@ -161,7 +163,7 @@ static Dictionary<string, object?> ParseBinds(string[] pairs)
     foreach (var p in pairs)
     {
         int eq = p.IndexOf('=');
-        if (eq <= 0) throw new ArgumentException($"Bind inválido (esperado k=v): {p}");
+        if (eq <= 0) throw new ArgumentException($"Invalid bind (expected k=v): {p}");
         d[p[..eq]] = p[(eq + 1)..];
     }
     return d;

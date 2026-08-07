@@ -73,20 +73,24 @@ Running from source:
 dotnet run --project src/HExporter.Cli -- --help
 ```
 
-### Main options
+### Options
 
 | Option | Description |
 |--------|-------------|
-| `--sql` / `--table` / `--profile` | Source (query, table, or `report.json` profile) |
-| `--format csv\|xlsx` | Output format (default csv) |
-| `--out <path>` | Destination (`-` = stdout, CSV only) |
-| `--bind k=v` | Bind variable (repeatable) |
-| `--delimiter` | CSV delimiter (default `,`) |
-| `--sheet` | XLSX sheet name (default `Datos`) |
-| `--flush-every` | Rows between flushes (default 10,000) |
-| `--no-headers` | Skips headers |
+| `--sql <sql>` | SELECT query to export. |
+| `--sql-file <path>` | Path to a `.sql` file with the query to export. |
+| `--table <table>` | Table/view to export (`SELECT *`). |
+| `--profile <path>` | Path to a `report.json`. |
+| `--format csv\|xlsx` | Output format (default `csv`). |
+| `--out <path>` | Destination file (`-` = stdout, CSV only). |
+| `--bind k=v` | Bind variable (repeatable). |
+| `--delimiter <char>` | CSV delimiter (default `,`). |
+| `--no-headers` | Omit headers. |
+| `--sheet <name>` | XLSX sheet name (default `Data`). |
+| `--flush-every <n>` | Rows between flushes (default `10000`). |
+| `--env-file <path>` | Path to an alternate `.env` file (default: `.env` in the current directory). |
 
-Full reference: [`docs/05-configuration.md`](./docs/05-configuration.md).
+One of `--sql`, `--sql-file`, `--table`, or `--profile` is required. Full reference: [`docs/05-configuration.md`](./docs/05-configuration.md).
 
 ## Configuration
 

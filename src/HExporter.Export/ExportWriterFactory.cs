@@ -11,6 +11,6 @@ public sealed class ExportWriterFactory : IExportWriterFactory
     {
         ExportFormat.Csv => new CsvExportWriter(destination, options),
         ExportFormat.Xlsx => new XlsxExportWriter(destination, options),
-        _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Formato no soportado.")
+        _ => throw new ArgumentOutOfRangeException(nameof(format), format, "Unsupported format.")
     };
 }

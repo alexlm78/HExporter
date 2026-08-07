@@ -6,5 +6,5 @@ namespace HExporter.Cli;
 public sealed class ConsoleProgressSink : IProgressSink
 {
     public void Report(long rowsWritten)
-        => Console.Error.Write($"\r  {rowsWritten:N0} filas...");
+        => Console.Error.Write($"\r  {rowsWritten:N0} rows...");
 }
