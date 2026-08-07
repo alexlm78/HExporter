@@ -494,3 +494,7 @@ $RECYCLE.BIN/
 # tokensave MCP tool (local code-graph cache/db)
 .tokensave/
 
+graphify-out
+.claude
+CLAUDE.md
+
